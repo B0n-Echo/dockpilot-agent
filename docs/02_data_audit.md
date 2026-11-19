@@ -1,16 +1,16 @@
 # SetuHaul Logistics: Data Audit
 
 > Hand-in #1 (part B). Every data issue below comes with the query that proves it.
-> Database: `SetuHaul_Data_Package/setuhaul_freight_operations.db` (opened read-only). Snapshot: 4 Aug 2026, Asia/Kolkata.
+> Database: `data/source/setuhaul_freight_operations.db` (opened read-only). Snapshot: 4 Aug 2026, Asia/Kolkata.
 
 ---
 
 ## 1. How to run the queries
 
-From the `SetuHaul_Data_Package` folder:
+From the repository root:
 
 ```bash
-sqlite3 -readonly -box setuhaul_freight_operations.db
+sqlite3 -readonly -box data/source/setuhaul_freight_operations.db
 ```
 
 Then paste any query below. `.tables` lists tables, `.schema <table>` shows a table's columns, `.quit` exits.

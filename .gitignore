@@ -221,3 +221,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# DockPilot: working database copy (rebuilt from data/source at runtime)
+data/work/

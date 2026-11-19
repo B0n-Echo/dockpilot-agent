@@ -1,0 +1,22 @@
+[project]
+name = "dockpilot-agent"
+version = "0.1.0"
+description = "AI agent that reschedules late trucks into warehouse dock slots, backed by a capacity layer that never double-books."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = []
+
+[build-system]
+requires = ["uv_build>=0.13,<0.14"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "dockpilot"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+]
