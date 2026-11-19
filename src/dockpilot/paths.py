@@ -16,3 +16,6 @@ DATA_WORK = REPO_ROOT / "data" / "work"
 
 SOURCE_DB = DATA_SOURCE / "setuhaul_freight_operations.db"
 """The original snapshot database."""
+
+WORK_DB = DATA_WORK / "dockpilot.db"
+"""The working database: a copy of SOURCE_DB plus DockPilot's own tables. Rebuilt by db.init_work_db()."""
