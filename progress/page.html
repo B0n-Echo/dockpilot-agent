@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DockPilot build progress</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@600;700&family=Inter:wght@400;500;600&display=swap">
+<style>
+/* VOICE: calm status report for non-technical readers; conclusion first, plain words.
+   IDEA: a dock office's day board — one late truck's journey, step by step.
+   PICTURE: a horizontal journey strip: built steps solid, coming steps dashed.
+   COLOUR and TYPE: control room — steel panel, black, white, alarm red; Inter Tight + Inter.
+   LAYOUT: title + key figures, journey strip, worked example, blocks table, choices, limits.
+   Content comes from progress.json (injected by progress/server.py); nothing is hard-coded here. */
+:root{color-scheme:light dark;
+ --bg:light-dark(#ffffff,#16191c);--panel:light-dark(#d5dbe0,#22272c);--ink:light-dark(#0d0f11,#eef1f3);
+ --soft:light-dark(#4a535b,#a9b3bb);--line:light-dark(#b9c1c8,#3a4248);--red:#e8251a}
+:root[data-theme=light]{color-scheme:light}:root[data-theme=dark]{color-scheme:dark}
+*{box-sizing:border-box;min-width:0}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 Inter,system-ui,sans-serif;overflow-x:clip}
+h1,h2,h3{font-family:"Inter Tight",Inter,sans-serif;font-weight:700;line-height:1.05;text-wrap:balance;margin:0}
+h1{font-size:clamp(32px,5vw,48px);max-width:20ch}
+h2{font-size:clamp(24px,3vw,32px);margin-bottom:14px}
+h3{font-size:18px;line-height:1.25}
+p{margin:0 0 12px;max-width:68ch}
+.band{padding:clamp(28px,4vw,56px) max(5vw,16px)}
+.wrap{max-width:1240px;margin:0 auto}
+.panel{background:var(--panel)}
+.lede{font-size:17px;color:var(--soft);margin-top:14px}
+.figs{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,190px),1fr));gap:12px;margin-top:28px}
+.fig1{background:var(--bg);border-radius:6px;padding:16px}
+.big{font-family:"Inter Tight",sans-serif;font-weight:700;font-size:clamp(32px,4vw,44px);line-height:1;white-space:nowrap}
+.big.red{color:var(--red)}
+.cap{font-size:14px;color:var(--soft);margin-top:6px}
+.journey{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),1fr));gap:10px;margin-top:8px;list-style:none;padding:0}
+.step{border:2px solid var(--ink);border-radius:8px;padding:14px;background:var(--bg)}
+.step.todo{border-style:dashed;border-color:var(--line);color:var(--soft)}
+.tag{font-size:13px;font-weight:600}
+.tag.done{color:var(--red)}
+.step h3{margin:6px 0}
+.step p{font-size:14px;margin:0}
+.legend{font-size:14px;color:var(--soft);margin-top:12px}
+.story{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:28px}
+.time{display:grid;grid-template-columns:4.5em minmax(0,1fr);gap:4px 14px;margin:0}
+.time dt{font-family:"Inter Tight",sans-serif;font-weight:700;font-size:20px;white-space:nowrap}
+.time dd{margin:0 0 12px}
+.no{color:var(--red);font-weight:600}
+.card{background:var(--panel);border-radius:8px;padding:18px}
+.card.light{background:var(--bg)}
+.card ul{margin:8px 0 0;padding-left:20px}
+table{width:100%;border-collapse:collapse;font-size:15px}
+th,td{text-align:left;vertical-align:top;padding:12px 10px;border-bottom:1px solid var(--line)}
+th{font-size:14px;color:var(--soft);font-weight:600}
+td.name{font-weight:600}
+tr.todo td{color:var(--soft)}
+.pill{display:inline-block;font-size:13px;font-weight:600;padding:2px 8px;border-radius:999px;border:1px solid var(--line);white-space:nowrap}
+.pill.done{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.pill.next{border-color:var(--red);color:var(--red)}
+code{font-size:14px;overflow-wrap:anywhere}
+.cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr));gap:20px}
+.small{font-size:14px;color:var(--soft)}
+@media(max-width:900px){.story{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:600px){table{font-size:13px}.stack thead{display:none}.stack tr{display:grid;padding-block:10px;border-bottom:1px solid var(--line)}.stack td{display:flow-root;border:0;padding:3px 0;padding-inline-start:8em;text-align:start}.stack td::before{content:attr(data-l);float:inline-start;width:7.5em;margin-inline-start:-8em;white-space:normal;color:var(--soft);font-weight:500}.stack td:empty{display:none}}
+@media(prefers-reduced-motion:no-preference){.step:not(.todo){animation:rise .5s ease both}@keyframes rise{from{opacity:0;transform:translateY(8px)}}}
+</style>
+<script>new MutationObserver(()=>{for(const c of document.querySelectorAll('.stack td:not([data-l])')){let i=0,p=c;while(p=p.previousElementSibling)i+=p.colSpan;c.dataset.l=c.closest('table').rows[0].cells[i]?.textContent||''}}).observe(document,{childList:true,subtree:true})</script>
+</head>
+<body>
+<header class="band panel"><div class="wrap">
+  <h1 id="title"></h1>
+  <p class="lede" id="lede"></p>
+  <div class="figs" id="figs"></div>
+</div></header>
+
+<section class="band"><div class="wrap">
+  <h2>One late truck's journey</h2>
+  <p>This is what happens when a driver says "I'm running late".</p>
+  <ol class="journey" id="journey"></ol>
+  <p class="legend">Solid boxes: finished and tested. Dashed boxes: planned, not built yet.</p>
+</div></section>
+
+<section class="band panel"><div class="wrap">
+  <h2 id="ex-title"></h2>
+  <div class="story">
+    <dl class="time" id="ex-time"></dl>
+    <div class="card light"><h3>Why this matters</h3><ul id="ex-why"></ul></div>
+  </div>
+</div></section>
+
+<section class="band"><div class="wrap">
+  <h2>Building blocks</h2>
+  <p class="small">All code is in the <code>dockpilot-agent</code> repository. "Where" names the file, for anyone who wants to look.</p>
+  <table class="stack">
+    <thead><tr><th>Block</th><th>Status</th><th>What it does, in plain words</th><th>Where</th></tr></thead>
+    <tbody id="blocks"></tbody>
+  </table>
+</div></section>
+
+<section class="band panel"><div class="wrap">
+  <h2>Choices we made while waiting for the client's answers</h2>
+  <p>Some questions are still open with the client. We picked sensible starting values; each one can be changed in a single place when they reply.</p>
+  <div class="cols" id="choices"></div>
+</div></section>
+
+<section class="band"><div class="wrap">
+  <p class="small" id="limits"></p>
+  <p class="small" id="updated"></p>
+</div></section>
+
+<script id="data" type="application/json">__DATA__</script>
+<script>
+{
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const marks = s => esc(s).replace(/\*\*(.+?)\*\*/g, '<span class="no">$1</span>');
+  const d = JSON.parse(document.getElementById('data').textContent);
+  const set = (id, html) => { document.getElementById(id).innerHTML = html; };
+  const blocks = d.blocks || [];
+  const done = blocks.filter(b => b.status === 'done').length;
+  const label = {done: 'Built', next: 'Next', planned: 'Planned', later: 'Later'};
+
+  document.getElementById('title').textContent = d.title || '';
+  document.getElementById('lede').textContent = d.lede || '';
+  set('figs', [
+    [`${done} of ${blocks.length}`, 'Building blocks finished and saved', ''],
+    [d.checks_passing, 'Automatic checks on DockPilot, all passing', ''],
+    [d.rules_checked, 'Rules checked before any slot is offered', ''],
+    [d.source_changes, "Changes made to the client's original data", 'red']
+  ].map(([n, c, k]) => `<div class="fig1"><div class="big ${k}">${esc(n)}</div><div class="cap">${esc(c)}</div></div>`).join(''));
+
+  set('journey', (d.journey || []).map(s => {
+    const isDone = s.status === 'done';
+    return `<li class="step${isDone ? '' : ' todo'}"><span class="tag${isDone ? ' done' : ''}">${esc(label[s.status] || s.status)}</span><h3>${esc(s.title)}</h3><p>${esc(s.text)}</p></li>`;
+  }).join(''));
+
+  const ex = d.example || {};
+  document.getElementById('ex-title').textContent = ex.title || '';
+  set('ex-time', (ex.timeline || []).map(t => `<dt>${esc(t.t)}</dt><dd>${marks(t.text)}</dd>`).join(''));
+  set('ex-why', (ex.why || []).map(w => `<li>${esc(w)}</li>`).join(''));
+
+  set('blocks', blocks.map(b => `<tr class="${b.status === 'done' ? '' : 'todo'}">
+    <td class="name">${esc(b.name)}</td>
+    <td><span class="pill ${esc(b.status)}">${esc(label[b.status] || b.status)}</span></td>
+    <td>${esc(b.what)}</td>
+    <td>${b.where ? `<code>${esc(b.where)}</code>` : ''}</td></tr>`).join(''));
+
+  set('choices', (d.choices || []).map(c => `<div class="card light"><h3>${esc(c.title)}</h3><ul>${(c.items || []).map(i => `<li>${esc(i)}</li>`).join('')}</ul></div>`).join(''));
+  document.getElementById('limits').textContent = d.limits || '';
+  document.getElementById('updated').textContent = d.updated ? `Last updated ${d.updated}.` : '';
+}
+</script>
+</body>
+</html>
