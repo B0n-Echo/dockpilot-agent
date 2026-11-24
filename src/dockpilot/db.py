@@ -6,6 +6,7 @@ working copy built by init_work_db(), which also adds DockPilot's own tables.
 
 import shutil
 import sqlite3
+from contextlib import contextmanager
 from pathlib import Path
 
 from dockpilot import paths
@@ -18,7 +19,10 @@ def connect(path):
     """Open a SQLite database the way DockPilot expects.
 
     Foreign-key checks are switched on (SQLite leaves them off by default), and rows
-    come back addressable by column name, e.g. row["slot_id"].
+    come back addressable by column name, e.g. row["slot_id"]. The connection is in
+    autocommit mode: Python never opens a transaction on its own, so every multi-step
+    write must use write_transaction(). If another process is writing, it waits up to
+    5 seconds instead of failing at once.
 
     Args:
         path: file path of the database to open.
@@ -26,11 +30,33 @@ def connect(path):
     Returns:
         An open sqlite3.Connection.
     """
-    conn = sqlite3.connect(path)
+    conn = sqlite3.connect(path, timeout=5, isolation_level=None)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
-    # Busy timeout / write-transaction mode for concurrent claims: dp-06, dp-11.
     return conn
+
+
+@contextmanager
+def write_transaction(conn):
+    """Run a block of database work as "all of it, or none of it".
+
+    Starts with BEGIN IMMEDIATE, which takes the database's write lock at the start, so
+    only one writer at a time can check and then write. Commits if the block finishes,
+    rolls back if it raises.
+
+    Args:
+        conn: a connection from connect() (autocommit mode).
+
+    Yields:
+        The same connection.
+    """
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        yield conn
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
+    conn.execute("COMMIT")
 
 
 def init_work_db(target=paths.WORK_DB):
