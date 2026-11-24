@@ -60,7 +60,8 @@ def latest_eta(conn, shipment_id, clock):
 
     Works like the client's v_latest_eta view, but ignores ETA updates logged after now,
     so a replay never "knows the future". Without any update it falls back to the
-    shipment's own ETA fields, as the view does.
+    shipment's own ETA fields, as the view does: latest_eta_ts (source "SHIPMENT_RECORD")
+    or else original_eta_ts (source "ORIGINAL_PLAN").
 
     Args:
         conn: open database connection.
@@ -86,7 +87,9 @@ def latest_eta(conn, shipment_id, clock):
     ).fetchone()
     if ship is None:
         raise LookupError(f"Unknown shipment {shipment_id}")
-    return _ts(ship["latest_eta_ts"] or ship["original_eta_ts"]), "ORIGINAL_PLAN", "HIGH"
+    if ship["latest_eta_ts"]:
+        return _ts(ship["latest_eta_ts"]), "SHIPMENT_RECORD", "HIGH"
+    return _ts(ship["original_eta_ts"]), "ORIGINAL_PLAN", "HIGH"
 
 
 def _facility_rules(conn, facility_id, today):

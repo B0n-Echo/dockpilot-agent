@@ -1,25 +1,60 @@
 {
-  "title": "DockPilot can now find a late truck a slot it can really use, and hold it safely",
+  "title": "DockPilot finds late trucks a slot they can really use, holds it safely, and hands the rest to a person",
   "lede": "A progress note in plain words. DockPilot helps a warehouse when trucks run late: it works out which unloading slots still fit, offers the best ones, and makes sure two drivers can never be given the same slot. Built on the practice data from 4 August 2026.",
   "updated": "2026-11-24",
-  "checks_passing": 45,
+  "checks_passing": 52,
   "rules_checked": 15,
   "source_changes": 0,
   "journey": [
-    {"status": "done", "title": "Can this slot work?", "text": "Checks a slot against 15 rules: weight, dock type, arrival time, unload time, opening hours, breakdowns, and more."},
-    {"status": "done", "title": "Find the best options", "text": "Looks at every slot for the rest of the day and picks the top 3 that pass every rule."},
-    {"status": "done", "title": "Hold it for 10 minutes", "text": "Reserves the chosen slot while the driver confirms. Nobody else can take it. Unused holds free themselves."},
-    {"status": "next", "title": "Warehouse confirms", "text": "The hold becomes a booking request; the warehouse says yes or no."},
-    {"status": "later", "title": "Hand to a person", "text": "When nothing fits, a coordinator gets the full story at once."}
+    {
+      "status": "done",
+      "title": "Can this slot work?",
+      "text": "Checks a slot against 15 rules: weight, dock type, arrival time, unload time, opening hours, breakdowns, and more."
+    },
+    {
+      "status": "done",
+      "title": "Find the best options",
+      "text": "Looks at every slot for the rest of the day and picks the top 3 that pass every rule."
+    },
+    {
+      "status": "done",
+      "title": "Hold it for 10 minutes",
+      "text": "Reserves the chosen slot while the driver confirms. Nobody else can take it. Unused holds free themselves."
+    },
+    {
+      "status": "next",
+      "title": "Warehouse confirms",
+      "text": "The hold becomes a booking request; the warehouse says yes or no."
+    },
+    {
+      "status": "done",
+      "title": "Hand to a person",
+      "text": "When nothing fits, a coordinator gets the full story at once: who, the current booking, the real arrival time, every slot tried and why it failed."
+    }
   ],
   "example": {
     "title": "A real example from the data: truck SHP1014",
     "timeline": [
-      {"t": "09:44", "text": "The driver of a critical load (21 tonnes, 75 minutes to unload) says they'll arrive at 11:25."},
-      {"t": "Before", "text": "The old system had booked them into the 11:00 slot on dock D1. DockPilot shows that slot fails three ways: **arrives too late**, **too heavy for the dock** and **unload too long for the slot**."},
-      {"t": "Options", "text": "DockPilot offers dock D2 12:00–14:00, dock D4 12:00–14:00, or dock D2 13:00–15:00. It uses two slots in a row, because 75 minutes doesn't fit in one hour."},
-      {"t": "09:45", "text": "The driver picks D2. It's held until 09:55. Another driver who asks for the same slot is told it's taken."},
-      {"t": "09:56", "text": "Nobody confirmed, so the hold ran out by itself and the slot is free for others again."}
+      {
+        "t": "09:44",
+        "text": "The driver of a critical load (21 tonnes, 75 minutes to unload) says they'll arrive at 11:25."
+      },
+      {
+        "t": "Before",
+        "text": "The old system had booked them into the 11:00 slot on dock D1. DockPilot shows that slot fails three ways: **arrives too late**, **too heavy for the dock** and **unload too long for the slot**."
+      },
+      {
+        "t": "Options",
+        "text": "DockPilot offers dock D2 12:00–14:00, dock D4 12:00–14:00, or dock D2 13:00–15:00. It uses two slots in a row, because 75 minutes doesn't fit in one hour."
+      },
+      {
+        "t": "09:45",
+        "text": "The driver picks D2. It's held until 09:55. Another driver who asks for the same slot is told it's taken."
+      },
+      {
+        "t": "09:56",
+        "text": "Nobody confirmed, so the hold ran out by itself and the slot is free for others again."
+      }
     ],
     "why": [
       "The client's current system accepted that 11:00 booking without complaint. DockPilot refuses it, and says why in plain words.",
@@ -29,37 +64,152 @@
     ]
   },
   "blocks": [
-    {"id": "dp-01", "name": "Project set-up", "status": "done", "commit": "5693e5b", "what": "Creates the project and stores the client's data package exactly as received, with fingerprints that prove it never changes.", "where": "data/source/"},
-    {"id": "dp-02", "name": "Working copy", "status": "done", "commit": "d2f5642", "what": "Makes a copy of the client's database to work on, and adds three new tables: holds, hand-offs to people, and a log of everything that happens. The original is only ever read.", "where": "db.py, migrations/"},
-    {"id": "dp-03", "name": "Clock and settings", "status": "done", "commit": "e8c526f", "what": "A clock that tests can wind forward, so \"10 minutes later\" takes a split second to test. All agreed numbers (hold times, buffers, timeouts) live in one settings file.", "where": "clock.py, settings.py"},
-    {"id": "dp-04", "name": "Slot check", "status": "done", "commit": "fe087fb", "what": "Answers \"can this truck use this slot?\" and lists every reason if not: wrong dock, too heavy, too late, unload too long, dock broken, slot taken, and so on.", "where": "feasibility.py"},
-    {"id": "dp-05", "name": "Find options", "status": "done", "commit": "6491f8f", "what": "Builds every sensible choice (one slot, or two back-to-back for long unloads), checks each, and ranks the passing ones: earliest first.", "where": "options.py"},
-    {"id": "dp-06", "name": "Safe hold", "status": "done", "commit": "8f2426d", "what": "Reserves the chosen slot for 10 minutes (5 when it's very busy). One request at a time, so two drivers can never both win the same slot.", "where": "holds.py"},
-    {"id": "dp-07", "name": "Hand-off to a person", "status": "next", "what": "When no slot fits, writes the full story for a coordinator: who, what, latest arrival time, every option tried and why it failed.", "where": ""},
-    {"id": "dp-08", "name": "Warehouse confirmation", "status": "planned", "what": "Turns a hold into a booking request the warehouse confirms or rejects, and chases if they don't answer in time.", "where": ""},
-    {"id": "dp-09", "name": "Changes during the day", "status": "planned", "what": "Handles new arrival times, reschedules, no-shows and dock breakdowns that hit bookings already made.", "where": ""},
-    {"id": "dp-10", "name": "Fair choice between trucks", "status": "planned", "what": "Decides who gets a slot when several trucks want it, with priority loads protected and close calls sent to a person.", "where": ""},
-    {"id": "dp-11", "name": "Stress test", "status": "planned", "what": "Many programs race for one slot, 100 times over, to prove nothing is ever double-booked.", "where": ""},
-    {"id": "dp-12", "name": "Message reader", "status": "planned", "what": "Reads a driver's message and picks out what they want and when they'll arrive, using simple rules.", "where": ""},
-    {"id": "dp-13", "name": "AI message reader", "status": "planned", "what": "Uses an AI model to read messages more flexibly, falling back to the simple rules if it's unavailable.", "where": ""},
-    {"id": "dp-14", "name": "Conversation", "status": "planned", "what": "Talks with the driver: asks one clear question when needed, offers options, and always explains a refusal.", "where": ""},
-    {"id": "dp-15", "name": "Chat simulator", "status": "planned", "what": "Lets you type as a driver, and act as the warehouse with confirm and reject.", "where": ""},
-    {"id": "dp-16", "name": "Replay of real cases", "status": "planned", "what": "Replays the client's recorded cases end to end and reports the results.", "where": ""},
-    {"id": "dp-17", "name": "Write-up", "status": "planned", "what": "Explains DockPilot and how to run it, with examples from the replays.", "where": ""}
+    {
+      "id": "dp-01",
+      "name": "Project set-up",
+      "status": "done",
+      "commit": "5693e5b",
+      "what": "Creates the project and stores the client's data package exactly as received, with fingerprints that prove it never changes.",
+      "where": "data/source/"
+    },
+    {
+      "id": "dp-02",
+      "name": "Working copy",
+      "status": "done",
+      "commit": "d2f5642",
+      "what": "Makes a copy of the client's database to work on, and adds three new tables: holds, hand-offs to people, and a log of everything that happens. The original is only ever read.",
+      "where": "db.py, migrations/"
+    },
+    {
+      "id": "dp-03",
+      "name": "Clock and settings",
+      "status": "done",
+      "commit": "e8c526f",
+      "what": "A clock that tests can wind forward, so \"10 minutes later\" takes a split second to test. All agreed numbers (hold times, buffers, timeouts) live in one settings file.",
+      "where": "clock.py, settings.py"
+    },
+    {
+      "id": "dp-04",
+      "name": "Slot check",
+      "status": "done",
+      "commit": "fe087fb",
+      "what": "Answers \"can this truck use this slot?\" and lists every reason if not: wrong dock, too heavy, too late, unload too long, dock broken, slot taken, and so on.",
+      "where": "feasibility.py"
+    },
+    {
+      "id": "dp-05",
+      "name": "Find options",
+      "status": "done",
+      "commit": "6491f8f",
+      "what": "Builds every sensible choice (one slot, or two back-to-back for long unloads), checks each, and ranks the passing ones: earliest first.",
+      "where": "options.py"
+    },
+    {
+      "id": "dp-06",
+      "name": "Safe hold",
+      "status": "done",
+      "commit": "8f2426d",
+      "what": "Reserves the chosen slot for 10 minutes (5 when it's very busy). One request at a time, so two drivers can never both win the same slot.",
+      "where": "holds.py"
+    },
+    {
+      "id": "dp-07",
+      "name": "Hand-off to a person",
+      "status": "done",
+      "what": "When no slot fits, writes the full story for a coordinator: who, what, latest arrival time, every option tried and why it failed.",
+      "where": "escalations.py",
+      "commit": ""
+    },
+    {
+      "id": "dp-08",
+      "name": "Warehouse confirmation",
+      "status": "next",
+      "what": "Turns a hold into a booking request the warehouse confirms or rejects, and chases if they don't answer in time.",
+      "where": ""
+    },
+    {
+      "id": "dp-09",
+      "name": "Changes during the day",
+      "status": "planned",
+      "what": "Handles new arrival times, reschedules, no-shows and dock breakdowns that hit bookings already made.",
+      "where": ""
+    },
+    {
+      "id": "dp-10",
+      "name": "Fair choice between trucks",
+      "status": "planned",
+      "what": "Decides who gets a slot when several trucks want it, with priority loads protected and close calls sent to a person.",
+      "where": ""
+    },
+    {
+      "id": "dp-11",
+      "name": "Stress test",
+      "status": "planned",
+      "what": "Many programs race for one slot, 100 times over, to prove nothing is ever double-booked.",
+      "where": ""
+    },
+    {
+      "id": "dp-12",
+      "name": "Message reader",
+      "status": "planned",
+      "what": "Reads a driver's message and picks out what they want and when they'll arrive, using simple rules.",
+      "where": ""
+    },
+    {
+      "id": "dp-13",
+      "name": "AI message reader",
+      "status": "planned",
+      "what": "Uses an AI model to read messages more flexibly, falling back to the simple rules if it's unavailable.",
+      "where": ""
+    },
+    {
+      "id": "dp-14",
+      "name": "Conversation",
+      "status": "planned",
+      "what": "Talks with the driver: asks one clear question when needed, offers options, and always explains a refusal.",
+      "where": ""
+    },
+    {
+      "id": "dp-15",
+      "name": "Chat simulator",
+      "status": "planned",
+      "what": "Lets you type as a driver, and act as the warehouse with confirm and reject.",
+      "where": ""
+    },
+    {
+      "id": "dp-16",
+      "name": "Replay of real cases",
+      "status": "planned",
+      "what": "Replays the client's recorded cases end to end and reports the results.",
+      "where": ""
+    },
+    {
+      "id": "dp-17",
+      "name": "Write-up",
+      "status": "planned",
+      "what": "Explains DockPilot and how to run it, with examples from the replays.",
+      "where": ""
+    }
   ],
   "choices": [
-    {"title": "Timings", "items": [
-      "Hold a slot for 10 minutes, or 5 when 5+ requests arrive within 10 minutes.",
-      "Wait 30 minutes for the warehouse to confirm before a coordinator chases.",
-      "Add 30 minutes of slack when a driver's arrival estimate is vague."
-    ]},
-    {"title": "Rules", "items": [
-      "Show the driver at most 3 options at a time.",
-      "One hold per truck: picking a new slot releases the old one.",
-      "Any dock problem (breakdown, maintenance, slowdown) blocks the slot.",
-      "A slot starting at exactly 21:00 is allowed; later starts need approval.",
-      "Weight limits are checked against the load only, for now."
-    ]}
+    {
+      "title": "Timings",
+      "items": [
+        "Hold a slot for 10 minutes, or 5 when 5+ requests arrive within 10 minutes.",
+        "Wait 30 minutes for the warehouse to confirm before a coordinator chases.",
+        "Add 30 minutes of slack when a driver's arrival estimate is vague."
+      ]
+    },
+    {
+      "title": "Rules",
+      "items": [
+        "Show the driver at most 3 options at a time.",
+        "One hold per truck: picking a new slot releases the old one.",
+        "Any dock problem (breakdown, maintenance, slowdown) blocks the slot.",
+        "A slot starting at exactly 21:00 is allowed; later starts need approval.",
+        "Weight limits are checked against the load only, for now."
+      ]
+    }
   ],
-  "limits": "Honest limits today: the safety of holds has been tested with one program at a time; the many-at-once stress test is still to come. There's no chat yet, so drivers can't use it."
+  "limits": "Honest limits today: hand-offs are shown on screen only (no email or WhatsApp yet), and coordinators can't mark them as handled yet. The safety of holds has been tested with one program at a time; the many-at-once stress test is still to come. There's no chat yet, so drivers can't use it."
 }

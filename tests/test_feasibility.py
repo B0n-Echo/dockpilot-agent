@@ -104,6 +104,11 @@ def test_latest_eta_ignores_updates_from_the_future(conn, clock):
     assert before != after
 
 
+def test_shipment_record_eta_is_labelled_as_such(conn, clock):
+    """At 09:45 SHP1015 has no visible update; its 18:30 comes from the shipment record."""
+    assert latest_eta(conn, "SHP1015", clock) == (datetime(2026, 8, 4, 18, 30, tzinfo=IST), "SHIPMENT_RECORD", "HIGH")
+
+
 def test_unknown_ids_raise(conn, clock):
     """An unknown shipment or slot is an error, not a 'not feasible' answer."""
     with pytest.raises(LookupError):
