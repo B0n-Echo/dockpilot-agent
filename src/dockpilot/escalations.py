@@ -70,11 +70,12 @@ def _constraints(conn, shipment_id, now):
 
 
 def create_escalation(conn, reason_code, shipment_id, clock, options_checked=(), summary=None,
-                      thread_id=None, driver_constraints=None):
+                      thread_id=None, driver_constraints=None, appointment_id=None):
     """Open an escalation with every M3 field filled from the database; return it.
 
-    options_checked is a list of dp-04 Feasibility results. If the shipment already has an
-    OPEN escalation with the same reason, that one is returned instead of a duplicate.
+    options_checked is a list of dp-04 Feasibility results. appointment_id names the booking
+    concerned; if omitted, the shipment's current live booking is used. If the shipment already
+    has an OPEN escalation with the same reason, that one is returned instead of a duplicate.
     """
     now = to_iso(clock.now())
     with write_transaction(conn):
@@ -115,7 +116,7 @@ def create_escalation(conn, reason_code, shipment_id, clock, options_checked=(),
                    driver_constraints, summary)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (esc_id, now, reason_code, ship["driver_id"], shipment_id, thread_id,
-             appt["appointment_id"] if appt else None, to_iso(eta), source, confidence, json.dumps(checked),
+             appointment_id or (appt["appointment_id"] if appt else None), to_iso(eta), source, confidence, json.dumps(checked),
              driver_constraints or _constraints(conn, shipment_id, now), summary),
         )
         _log(conn, clock, "ESCALATION_RAISED", esc_id, shipment_id, "AGENT")

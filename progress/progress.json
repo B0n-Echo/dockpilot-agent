@@ -2,7 +2,7 @@
   "title": "DockPilot finds late trucks a slot they can really use, holds it safely, and hands the rest to a person",
   "lede": "A progress note in plain words. DockPilot helps a warehouse when trucks run late: it works out which unloading slots still fit, offers the best ones, and makes sure two drivers can never be given the same slot. Built on the practice data from 4 August 2026.",
   "updated": "2026-11-24",
-  "checks_passing": 52,
+  "checks_passing": 59,
   "rules_checked": 15,
   "source_changes": 0,
   "journey": [
@@ -22,9 +22,9 @@
       "text": "Reserves the chosen slot while the driver confirms. Nobody else can take it. Unused holds free themselves."
     },
     {
-      "status": "next",
+      "status": "done",
       "title": "Warehouse confirms",
-      "text": "The hold becomes a booking request; the warehouse says yes or no."
+      "text": "The driver says yes and the hold becomes a booking request. The warehouse confirms or rejects it; no answer in 30 minutes goes to a coordinator."
     },
     {
       "status": "done",
@@ -118,19 +118,20 @@
       "status": "done",
       "what": "When no slot fits, writes the full story for a coordinator: who, what, latest arrival time, every option tried and why it failed.",
       "where": "escalations.py",
-      "commit": ""
+      "commit": "8448ac0"
     },
     {
       "id": "dp-08",
       "name": "Warehouse confirmation",
-      "status": "next",
+      "status": "done",
       "what": "Turns a hold into a booking request the warehouse confirms or rejects, and chases if they don't answer in time.",
-      "where": ""
+      "where": "bookings.py",
+      "commit": ""
     },
     {
       "id": "dp-09",
       "name": "Changes during the day",
-      "status": "planned",
+      "status": "next",
       "what": "Handles new arrival times, reschedules, no-shows and dock breakdowns that hit bookings already made.",
       "where": ""
     },
@@ -211,5 +212,5 @@
       ]
     }
   ],
-  "limits": "Honest limits today: hand-offs are shown on screen only (no email or WhatsApp yet), and coordinators can't mark them as handled yet. The safety of holds has been tested with one program at a time; the many-at-once stress test is still to come. There's no chat yet, so drivers can't use it."
+  "limits": "Honest limits today: warehouse answers and hand-offs are handled on screen only (no email or WhatsApp yet), and coordinators can't mark them as handled yet. The safety of holds has been tested with one program at a time; the many-at-once stress test is still to come. There's no chat yet, so drivers can't use it."
 }
