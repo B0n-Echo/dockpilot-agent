@@ -2,7 +2,7 @@
   "title": "DockPilot finds late trucks a slot they can really use, holds it safely, and hands the rest to a person",
   "lede": "A progress note in plain words. DockPilot helps a warehouse when trucks run late: it works out which unloading slots still fit, offers the best ones, and makes sure two drivers can never be given the same slot. Built on the practice data from 4 August 2026.",
   "updated": "2026-11-24",
-  "checks_passing": 59,
+  "checks_passing": 65,
   "rules_checked": 15,
   "source_changes": 0,
   "journey": [
@@ -126,19 +126,20 @@
       "status": "done",
       "what": "Turns a hold into a booking request the warehouse confirms or rejects, and chases if they don't answer in time.",
       "where": "bookings.py",
-      "commit": ""
+      "commit": "b5d958a"
     },
     {
       "id": "dp-09",
       "name": "Changes during the day",
-      "status": "next",
+      "status": "done",
       "what": "Handles new arrival times, reschedules, no-shows and dock breakdowns that hit bookings already made.",
-      "where": ""
+      "where": "lifecycle.py",
+      "commit": ""
     },
     {
       "id": "dp-10",
       "name": "Fair choice between trucks",
-      "status": "planned",
+      "status": "next",
       "what": "Decides who gets a slot when several trucks want it, with priority loads protected and close calls sent to a person.",
       "where": ""
     },
