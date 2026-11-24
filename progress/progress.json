@@ -2,7 +2,7 @@
   "title": "DockPilot finds late trucks a slot they can really use, holds it safely, and hands the rest to a person",
   "lede": "A progress note in plain words. DockPilot helps a warehouse when trucks run late: it works out which unloading slots still fit, offers the best ones, and makes sure two drivers can never be given the same slot. Built on the practice data from 4 August 2026.",
   "updated": "2026-11-24",
-  "checks_passing": 65,
+  "checks_passing": 81,
   "rules_checked": 15,
   "source_changes": 0,
   "journey": [
@@ -134,34 +134,28 @@
       "status": "done",
       "what": "Handles new arrival times, reschedules, no-shows and dock breakdowns that hit bookings already made.",
       "where": "lifecycle.py",
-      "commit": ""
-    },
-    {
-      "id": "dp-10",
-      "name": "Fair choice between trucks",
-      "status": "next",
-      "what": "Decides who gets a slot when several trucks want it, with priority loads protected and close calls sent to a person.",
-      "where": ""
-    },
-    {
-      "id": "dp-11",
-      "name": "Stress test",
-      "status": "planned",
-      "what": "Many programs race for one slot, 100 times over, to prove nothing is ever double-booked.",
-      "where": ""
+      "commit": "48ac2d1"
     },
     {
       "id": "dp-12",
       "name": "Message reader",
-      "status": "planned",
+      "status": "done",
       "what": "Reads a driver's message and picks out what they want and when they'll arrive, using simple rules.",
-      "where": ""
+      "where": "reader.py",
+      "commit": ""
     },
     {
       "id": "dp-13",
       "name": "AI message reader",
-      "status": "planned",
+      "status": "next",
       "what": "Uses an AI model to read messages more flexibly, falling back to the simple rules if it's unavailable.",
+      "where": ""
+    },
+    {
+      "id": "dp-18",
+      "name": "Driver login",
+      "status": "planned",
+      "what": "Only a real driver with a trip in progress or a booked slot can chat: phone number plus a one-time code.",
       "where": ""
     },
     {
@@ -173,9 +167,23 @@
     },
     {
       "id": "dp-15",
-      "name": "Chat simulator",
+      "name": "Web chat page",
       "status": "planned",
-      "what": "Lets you type as a driver, and act as the warehouse with confirm and reject.",
+      "what": "A simple local web page: the driver logs in, then chats with DockPilot like on WhatsApp; a warehouse view confirms or rejects requests.",
+      "where": ""
+    },
+    {
+      "id": "dp-10",
+      "name": "Fair choice between trucks",
+      "status": "planned",
+      "what": "Decides who gets a slot when several trucks want it, with priority loads protected and close calls sent to a person.",
+      "where": ""
+    },
+    {
+      "id": "dp-11",
+      "name": "Stress test",
+      "status": "planned",
+      "what": "Many programs race for one slot, 100 times over, to prove nothing is ever double-booked.",
       "where": ""
     },
     {
