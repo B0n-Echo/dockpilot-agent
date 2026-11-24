@@ -17,6 +17,7 @@ def test_defaults_match_agreed_values():
         "collection_window_seconds": 30,
         "warehouse_timeout_minutes": 30,
         "eta_buffer_minutes": 30,
+        "max_options": 3,
     }
 
 

@@ -37,6 +37,9 @@ class Settings:
     """Slack added between a low-confidence ETA and the slot start (R7).
     Our working default; replace with the client's answer to Q6."""
 
+    max_options: int = 3
+    """How many slot options a driver is shown at once (D5 / D11)."""
+
 
 SETTINGS = Settings()
 """The shared settings with the agreed defaults."""
