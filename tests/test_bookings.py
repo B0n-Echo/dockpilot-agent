@@ -104,3 +104,13 @@ def test_saying_yes_twice_books_once(conn, clock):
     first, again = convert_hold(conn, group, clock), convert_hold(conn, group, clock)
     assert again.replayed and again.appointment_id == first.appointment_id
     assert get_hold(conn, group).status == "CONVERTED"
+
+
+def test_booking_the_slot_the_truck_already_has_is_refused_not_a_crash(conn, clock):
+    """dp-19: SHP1013 (now arriving 10:50) holds its own pending slot D2 11:00 (APT1013A); yes is a plain refusal."""
+    conn.execute("INSERT INTO eta_updates (eta_update_id, shipment_id, source_type, declared_eta_ts, confidence_code, "
+                 "created_at) VALUES ('ETA_DP-t', 'SHP1013', 'DRIVER_DECLARED', '2026-08-04T10:50:00+05:30', 'HIGH', "
+                 "'2026-08-04T09:45:00+05:30')")
+    group = place_hold(conn, "SHP1013", ["SLOT-JAI-018"], "own-slot", clock).hold.group_id
+    r = convert_hold(conn, group, clock)
+    assert not r.ok and r.reasons[0].code == "SLOT_TAKEN"

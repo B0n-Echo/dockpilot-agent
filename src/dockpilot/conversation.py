@@ -143,9 +143,54 @@ def _offer(conn, shipment, thread, key, clock, settings, intro=""):
         return Reply(True, f"{intro}No slot fits an arrival at {eta:%H:%M}: {_why_not(search.checked)}. "
                            "I've passed this to the coordinator; they'll call you.",
                      state="NOTHING", escalation_id=esc.escalation_id)
+    own = _own_booking(conn, shipment)
+    if own and search.options[0].slot_ids == own[1]:  # the best fit is the booking the truck already has (dp-19)
+        o, eta = search.options[0], latest_eta(conn, shipment, clock)[0]
+        fits = f"{intro}Good news: your booking {o.dock_code} {o.start:%H:%M}–{o.end:%H:%M} still works for {eta:%H:%M}."
+        if own[2] != "PENDING_CONFIRMATION":
+            _set_state(conn, thread, "NOTHING", {}, clock)
+            return Reply(True, f"{fits} It's confirmed.", state="NOTHING")
+        _set_state(conn, thread, "WAREHOUSE", {"appointment": own[0], "slot": f"{o.dock_code} {o.start:%H:%M}"}, clock)
+        return Reply(True, f"{fits} It's waiting for the warehouse to confirm; I'll tell you as soon as they do.",
+                     state="WAREHOUSE", appointment_id=own[0])
     opts = [{"slots": o.slot_ids, "dock": o.dock_code, "start": to_iso(o.start), "end": to_iso(o.end)}
-            for o in search.options]
+            for o in search.options if not own or o.slot_ids != own[1]]
     return _hold_and_list(conn, shipment, thread, opts, 0, key, clock, settings, intro)
+
+
+def _own_booking(conn, shipment):
+    """The truck's live booking as (appointment id, its slot ids in time order, status), or None (dp-19)."""
+    a = conn.execute(f"SELECT appointment_id, slot_id, appointment_status FROM appointments WHERE shipment_id = ? "
+                     f"AND appointment_status IN {LIVE} ORDER BY is_current DESC, booked_at DESC LIMIT 1",
+                     (shipment,)).fetchone()
+    if not a:
+        return None
+    slots = {a["slot_id"]} | {r[0] for r in conn.execute("SELECT slot_id FROM slot_holds WHERE appointment_id = ?",
+                                                          (a["appointment_id"],))}
+    ordered = [r[0] for r in conn.execute(f"SELECT slot_id FROM appointment_slots WHERE slot_id IN "
+                                          f"({','.join('?' * len(slots))}) ORDER BY slot_start_ts", tuple(slots))]
+    return a["appointment_id"], ordered, a["appointment_status"]
+
+
+def _waiting(conn, shipment, thread, note, clock):
+    """Any message while the warehouse decides: "I'm still checking …" (dp-19); the status if they already answered."""
+    a = conn.execute("SELECT appointment_status FROM appointments WHERE appointment_id = ?",
+                     (note.get("appointment"),)).fetchone()
+    if not a or a[0] != "PENDING_CONFIRMATION":
+        _set_state(conn, thread, "NOTHING", {}, clock)
+        return _status(conn, shipment, clock, "NOTHING")
+    on_it = "; a coordinator is on it" if note.get("escalated") else ""
+    return Reply(True, f"I'm still checking {note.get('slot', 'your slot')} with the warehouse{on_it}. "
+                       "I'll get back to you as soon as they answer.", state="WAREHOUSE")
+
+
+def _thread_for(conn, appointment_id):
+    """The chat a booking came from: via its hold, or a chat waiting on it."""
+    row = conn.execute("SELECT thread_id FROM slot_holds WHERE appointment_id = ? AND thread_id IS NOT NULL LIMIT 1",
+                       (appointment_id,)).fetchone() or conn.execute(
+        "SELECT thread_id FROM conversation_state WHERE json_extract(note, '$.appointment') = ? "
+        "ORDER BY updated_at DESC LIMIT 1", (appointment_id,)).fetchone()
+    return row and row[0]
 
 
 def _hold_and_list(conn, shipment, thread, opts, pick, key, clock, settings, intro=""):
@@ -255,10 +300,10 @@ def _answer_choice(conn, shipment, thread, text, r, note, key, clock, settings):
         res = convert_hold(conn, note["hold"], clock, settings)
         if not res.ok:
             return _offer(conn, shipment, thread, key, clock, settings, intro=f"{res.reasons[0].message} Here are fresh options. ")
-        o = opts[held]
-        _set_state(conn, thread, "WAREHOUSE", {"appointment": res.appointment_id}, clock)
-        return Reply(True, f"Request sent to the warehouse for {o['dock']} at {_hm(o['start'])}. "
-                           "I'll tell you when they confirm.", state="WAREHOUSE", appointment_id=res.appointment_id)
+        slot = f"{opts[held]['dock']} {_hm(opts[held]['start'])}"
+        _set_state(conn, thread, "WAREHOUSE", {"appointment": res.appointment_id, "slot": slot}, clock)
+        return Reply(True, f"Great, I'm confirming {slot} with the warehouse now. "
+                           "I'll get back to you as soon as they answer.", state="WAREHOUSE", appointment_id=res.appointment_id)
     if n is not None:
         return _hold_and_list(conn, shipment, thread, opts, n, key, clock, settings)
     if r.intent == "DECLINE":
@@ -367,7 +412,7 @@ def handle_message(conn, session_id, text, clock, settings=SETTINGS, reader=read
     elif awaiting == "CHOICE":
         reply = _answer_choice(conn, s.shipment_id, thread, text, r, note, key, clock, settings)
     elif awaiting == "WAREHOUSE":
-        reply = _status(conn, s.shipment_id, clock, "WAREHOUSE")
+        reply = _waiting(conn, s.shipment_id, thread, note, clock)
     else:
         reply = _fresh(conn, s.shipment_id, thread, text, r, key, clock, settings)
     return _finish(conn, thread, reply, clock, external=f"re:{message_ref}" if message_ref else None)
@@ -376,14 +421,12 @@ def handle_message(conn, session_id, text, clock, settings=SETTINGS, reader=read
 def notify_booking_result(conn, appointment_id, clock, settings=SETTINGS):
     """Tell the driver the warehouse's answer in their chat; after a rejection, show fresh options (R5)."""
     a = conn.execute(
-        """SELECT a.*, d.dock_code, sl.slot_start_ts,
-                  (SELECT thread_id FROM slot_holds h WHERE h.appointment_id = a.appointment_id
-                   AND h.thread_id IS NOT NULL LIMIT 1) AS thread_id
-           FROM appointments a JOIN appointment_slots sl ON sl.slot_id = a.slot_id
+        """SELECT a.*, d.dock_code, sl.slot_start_ts FROM appointments a JOIN appointment_slots sl ON sl.slot_id = a.slot_id
            JOIN docks d ON d.dock_id = sl.dock_id WHERE a.appointment_id = ?""", (appointment_id,)).fetchone()
-    if not a or not a["thread_id"]:
+    thread = a and _thread_for(conn, appointment_id)
+    if not thread:
         return Reply(False, "No chat to tell.")
-    thread, where = a["thread_id"], f"{a['dock_code']} at {_hm(a['slot_start_ts'])}"
+    where = f"{a['dock_code']} at {_hm(a['slot_start_ts'])}"
     if a["appointment_status"] == "CONFIRMED":
         _set_state(conn, thread, "NOTHING", {}, clock)
         ref = f", ref {a['warehouse_confirmation_ref']}" if a["warehouse_confirmation_ref"] else ""
@@ -452,4 +495,21 @@ def notify_allocation(conn, decisions, clock, settings=SETTINGS):
             reply = _offer(conn, d.shipment_id, d.thread_id, f"{d.thread_id}:{d.request_id}", clock, settings,
                            intro=f"{d.reason} ")
         out.append(_finish(conn, d.thread_id, reply, clock))
+    return out
+
+
+def notify_warehouse_timeout(conn, escalations, clock):
+    """The warehouse didn't answer in time (dp-08 escalated it): tell the waiting driver once (dp-19)."""
+    out = []
+    for esc in escalations:
+        thread = esc.appointment_id and _thread_for(conn, esc.appointment_id)
+        awaiting, note = _state(conn, thread) if thread else (None, {})
+        if awaiting != "WAREHOUSE" or note.get("appointment") != esc.appointment_id or note.get("escalated"):
+            continue
+        _set_state(conn, thread, "WAREHOUSE", {**note, "escalated": esc.escalation_id}, clock)
+        slot = note.get("slot", "your slot")
+        out.append(_finish(conn, thread, Reply(
+            True, f"The warehouse hasn't answered about {slot} yet, so I've passed your request to a coordinator with "
+                  "all the details. Someone will be in touch soon. Keep heading to the warehouse; your request is "
+                  "still in place.", state="WAREHOUSE", escalation_id=esc.escalation_id), clock))
     return out

@@ -1,5 +1,6 @@
 """Tests for the conversation agent (dp-14): offline, rule reader, real data."""
 
+import io
 import json
 from datetime import datetime
 
@@ -7,9 +8,10 @@ import pytest
 
 from dockpilot import db
 from dockpilot.auth import end_session, request_code, verify_code
-from dockpilot.bookings import confirm_booking, reject_booking
+from dockpilot.bookings import check_warehouse_timeouts, confirm_booking, reject_booking
 from dockpilot.clock import IST, FakeClock
-from dockpilot.conversation import CLOSE_TEXT, check_silent_drivers, handle_message, notify_booking_result
+from dockpilot.conversation import (CLOSE_TEXT, check_silent_drivers, handle_message, notify_booking_result,
+                                    notify_warehouse_timeout)
 from dockpilot.llm_reader import read_message_ai
 from dockpilot.reader import read_message
 
@@ -104,7 +106,7 @@ def test_yes_books_and_a_resend_gives_the_same_reply(conn):
     sid, clock, _ = _thr003_to_options(conn)
     first = _say(conn, sid, "1", clock, message_ref="wa-1")
     again = _say(conn, sid, "1", clock, message_ref="wa-1")
-    assert first.state == "WAREHOUSE" and first.text.startswith("Request sent to the warehouse for D2 at 12:00")
+    assert first.state == "WAREHOUSE" and first.text.startswith("Great, I'm confirming D2 12:00 with the warehouse now.")
     assert again.text == first.text
     assert _count(conn, "SELECT COUNT(*) FROM appointments WHERE shipment_id = 'SHP1013' "
                         "AND appointment_status = 'PENDING_CONFIRMATION'") == 2  # client's APT1013A stays (R1) + ours
@@ -238,3 +240,45 @@ def test_ai_reading_of_a_clock_time_is_not_forced_to_ask_first():
     assert clear.eta.hour == 11 and not clear.needs_clarification
     vague = read_message_ai("I am late by one hour.", at, call=answer("10:30", "MEDIUM"))
     assert vague.needs_clarification
+
+
+def test_users_live_test_own_booking_still_works_no_crash(conn):
+    """dp-19, the live test of 2026-11-25: "10:50" fits Kailash's existing D2 11:00 booking, so the agent says so;
+    "1" afterwards gets "still checking", nothing is booked twice, and the warehouse's answer reaches the chat."""
+    clock = FakeClock(datetime(2026, 8, 4, 9, 45, 42, tzinfo=IST))
+    sid = _login(conn, clock, "9000010013")
+    assert _say(conn, sid, "Hi, I am getting late by 30 mins", clock).state == "ETA"
+    reply = _say(conn, sid, "10:50", clock)
+    assert reply.text == ("Good news: your booking D2 11:00–12:00 still works for 10:50. It's waiting for the "
+                          "warehouse to confirm; I'll tell you as soon as they do.")
+    for _ in range(2):
+        assert _say(conn, sid, "1", clock).text == ("I'm still checking D2 11:00 with the warehouse. "
+                                                    "I'll get back to you as soon as they answer.")
+    assert _count(conn, "SELECT COUNT(*) FROM appointments WHERE appointment_id LIKE 'APT-%'") == 0
+    confirm_booking(conn, "APT1013A", clock)
+    assert notify_booking_result(conn, "APT1013A", clock).text == "Confirmed: D2 at 11:00."
+
+
+def test_own_booked_slot_is_never_listed_as_a_new_option(conn):
+    """Arriving 09:55, D1/D2 10:00 come first; Kailash's own D2 11:00 is not offered as a new choice."""
+    clock = _clock(9, 45)
+    sid = _login(conn, clock, "9000010013")
+    reply = _say(conn, sid, "I will reach by 9:55", clock)
+    assert reply.state == "CHOICE" and all("SLOT-JAI-018" not in o["slots"] for o in reply.options)
+
+
+def test_waiting_for_warehouse_then_timeout_tells_driver_once(conn):
+    """After "1": "hello?" gets "still checking"; 30 min later one coordinator hand-off and one driver message."""
+    sid, clock, _ = _thr003_to_options(conn)
+    _say(conn, sid, "1", clock)
+    assert _say(conn, sid, "hello?", clock).text == ("I'm still checking D2 12:00 with the warehouse. "
+                                                    "I'll get back to you as soon as they answer.")
+    clock.advance(minutes=30)
+    told = notify_warehouse_timeout(conn, check_warehouse_timeouts(conn, clock, out=io.StringIO()), clock)
+    assert [r.text for r in told] == [
+        "The warehouse hasn't answered about D2 12:00 yet, so I've passed your request to a coordinator with all "
+        "the details. Someone will be in touch soon. Keep heading to the warehouse; your request is still in place."]
+    clock.advance(seconds=5)
+    assert notify_warehouse_timeout(conn, check_warehouse_timeouts(conn, clock, out=io.StringIO()), clock) == []
+    assert _say(conn, sid, "any news?", clock).text.startswith(
+        "I'm still checking D2 12:00 with the warehouse; a coordinator is on it.")

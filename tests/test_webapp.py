@@ -9,7 +9,7 @@ from datetime import datetime
 
 import pytest
 
-from dockpilot import db
+from dockpilot import db, webapp
 from dockpilot.clock import IST, SNAPSHOT_TIME, DemoClock, FakeClock
 from dockpilot.reader import read_message
 from dockpilot.webapp import App, make_server
@@ -93,7 +93,7 @@ def test_contract_login_chat_confirm_driver_sees_result(server):
     assert status == 200 and hello["greeting"] == "Hi Kailash. Trip ORD-260804-013 (SHP1013)."
     assert driver.say("I am late by one hour.").startswith("Thanks. Your plan was 10:00. Will you reach around 11:00?")
     assert driver.say("around 11:15").startswith("You can make D2 12:00–13:00")
-    assert driver.say("1").startswith("Request sent to the warehouse for D2 at 12:00")
+    assert driver.say("1").startswith("Great, I'm confirming D2 12:00 with the warehouse now.")
     warehouse = Browser(base)
     mine = [p for p in warehouse.call("GET", "/api/warehouse")[1]["pending"] if p["shipment_id"] == "SHP1013"
             and p["slot"].startswith("D2 12:00")]
@@ -154,3 +154,24 @@ def test_demo_clock_starts_at_snapshot_and_jumps():
     assert clock.advance(minutes=10) >= SNAPSHOT_TIME.replace(minute=55)
     with pytest.raises(ValueError):
         clock.advance(minutes=-1)
+
+
+def test_server_error_gives_the_driver_a_plain_message(server, monkeypatch):
+    """A crash inside the agent answers 500 with a sentence for the driver, never silence or a stack trace."""
+    base, _ = server
+    driver = Browser(base)
+    driver.login("9000010013")
+    monkeypatch.setattr(webapp, "handle_message", lambda *a, **k: 1 / 0)
+    status, data = driver.call("POST", "/api/chat", {"text": "hello"})
+    assert status == 500 and data["error"] == "Sorry, something went wrong on my side. Please send that again in a moment."
+
+
+def test_warehouse_timeout_reaches_the_driver_through_the_timer(server):
+    """No warehouse answer for 30 minutes: the "+ minutes" button runs the timer and the driver is told once."""
+    base, _ = server
+    driver, _ = _to_pending(base)
+    wh = Browser(base)
+    wh.call("POST", "/api/clock/advance", {"minutes": 30})
+    wh.call("POST", "/api/clock/advance", {"minutes": 1})
+    told = [m for m in driver.messages() if m.startswith("The warehouse hasn't answered about D2 12:00 yet")]
+    assert len(told) == 1

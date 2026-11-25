@@ -1,5 +1,6 @@
 """From held slot to booking: driver says yes, warehouse says yes / no / nothing (D6)."""
 
+import sqlite3
 import uuid
 from dataclasses import dataclass
 from datetime import timedelta
@@ -44,37 +45,43 @@ def _pending(conn, appointment_id):
 
 
 def convert_hold(conn, group_id, clock, settings=SETTINGS):
-    """Driver said yes: turn an active hold into a PENDING booking; refuse if expired or no longer feasible."""
-    now = to_iso(clock.now())
-    with write_transaction(conn):
-        _expire(conn, clock)
-        hold = get_hold(conn, group_id)
-        if hold.status == "CONVERTED":
-            appt = conn.execute(
-                "SELECT h.appointment_id, a.appointment_status FROM slot_holds h "
-                "JOIN appointments a USING (appointment_id) WHERE h.group_id = ? LIMIT 1", (group_id,)).fetchone()
-            return BookingResult(True, appt["appointment_id"], appt["appointment_status"], True, [])
-        if hold.status == "EXPIRED":
-            return BookingResult(False, None, None, False,
-                                 [Reason("HOLD_EXPIRED", f"The hold ran out at {hold.expires_at:%H:%M}.")])
-        check = check_feasibility(conn, hold.shipment_id, hold.slot_ids, clock, settings)
-        if not check.feasible:
-            return BookingResult(False, None, None, False, check.reasons)
+    """Driver said yes: turn an active hold into a PENDING booking; refuse if expired, no longer feasible, or the
+    database refuses a second active booking on the slot (dp-19: a refusal, never a crash)."""
+    try:
+        now = to_iso(clock.now())
+        with write_transaction(conn):
+            _expire(conn, clock)
+            hold = get_hold(conn, group_id)
+            if hold.status == "CONVERTED":
+                appt = conn.execute(
+                    "SELECT h.appointment_id, a.appointment_status FROM slot_holds h "
+                    "JOIN appointments a USING (appointment_id) WHERE h.group_id = ? LIMIT 1", (group_id,)).fetchone()
+                return BookingResult(True, appt["appointment_id"], appt["appointment_status"], True, [])
+            if hold.status == "EXPIRED":
+                return BookingResult(False, None, None, False,
+                                     [Reason("HOLD_EXPIRED", f"The hold ran out at {hold.expires_at:%H:%M}.")])
+            check = check_feasibility(conn, hold.shipment_id, hold.slot_ids, clock, settings)
+            if not check.feasible:
+                return BookingResult(False, None, None, False, check.reasons)
 
-        old = conn.execute(
-            f"SELECT appointment_id FROM appointments WHERE shipment_id = ? AND is_current = 1 "
-            f"AND appointment_status IN ('{PENDING}', 'CONFIRMED', 'IN_PROGRESS')", (hold.shipment_id,)).fetchone()
-        appt_id = f"APT-{uuid.uuid4().hex[:10]}"
-        conn.execute(
-            """INSERT INTO appointments (appointment_id, shipment_id, slot_id, appointment_status, booking_source,
-                   is_current, booked_at, replaced_appointment_id, updated_at)
-               VALUES (?, ?, ?, ?, 'DRIVER_CHAT', 0, ?, ?, ?)""",
-            (appt_id, hold.shipment_id, hold.slot_ids[0], PENDING, now, old["appointment_id"] if old else None, now),
-        )
-        conn.execute("UPDATE slot_holds SET hold_status = 'CONVERTED', appointment_id = ? WHERE group_id = ?",
-                     (appt_id, group_id))
-        _log(conn, clock, "BOOKING_REQUESTED", appt_id, hold.shipment_id, "AGENT")
-    return BookingResult(True, appt_id, PENDING, False, [])
+            old = conn.execute(
+                f"SELECT appointment_id FROM appointments WHERE shipment_id = ? AND is_current = 1 "
+                f"AND appointment_status IN ('{PENDING}', 'CONFIRMED', 'IN_PROGRESS')", (hold.shipment_id,)).fetchone()
+            appt_id = f"APT-{uuid.uuid4().hex[:10]}"
+            conn.execute(
+                """INSERT INTO appointments (appointment_id, shipment_id, slot_id, appointment_status, booking_source,
+                       is_current, booked_at, replaced_appointment_id, updated_at)
+                   VALUES (?, ?, ?, ?, 'DRIVER_CHAT', 0, ?, ?, ?)""",
+                (appt_id, hold.shipment_id, hold.slot_ids[0], PENDING, now, old["appointment_id"] if old else None, now),
+            )
+            conn.execute("UPDATE slot_holds SET hold_status = 'CONVERTED', appointment_id = ? WHERE group_id = ?",
+                         (appt_id, group_id))
+            _log(conn, clock, "BOOKING_REQUESTED", appt_id, hold.shipment_id, "AGENT")
+        return BookingResult(True, appt_id, PENDING, False, [])
+    except sqlite3.IntegrityError as exc:
+        if "appointments." not in str(exc):
+            raise
+        return BookingResult(False, None, None, False, [Reason("SLOT_TAKEN", "This slot was just booked.")])
 
 
 def confirm_booking(conn, appointment_id, clock, ref=None):

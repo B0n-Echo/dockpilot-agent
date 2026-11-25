@@ -35,9 +35,9 @@ def base_url():
 
 
 def test_data_has_every_block_with_a_known_status():
-    """progress.json lists all 18 blocks, each with a name, a plain summary and a known status."""
+    """progress.json lists all 19 blocks, each with a name, a plain summary and a known status."""
     data = server.load_data()
-    assert len(data["blocks"]) == 18
+    assert len(data["blocks"]) == 19
     for block in data["blocks"]:
         assert block["name"] and block["what"]
         assert block["status"] in {"done", "next", "planned"}

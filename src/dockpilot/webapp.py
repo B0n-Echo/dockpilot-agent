@@ -10,6 +10,7 @@ import json
 import secrets
 import threading
 import time
+import traceback
 from datetime import datetime
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -20,7 +21,8 @@ from dockpilot.allocation import settle_requests
 from dockpilot.auth import end_session, get_session, request_code, verify_code
 from dockpilot.bookings import PENDING, check_warehouse_timeouts, confirm_booking, reject_booking
 from dockpilot.clock import DemoClock, to_iso
-from dockpilot.conversation import check_silent_drivers, handle_message, notify_allocation, notify_booking_result
+from dockpilot.conversation import (check_silent_drivers, handle_message, notify_allocation, notify_booking_result,
+                                    notify_warehouse_timeout)
 from dockpilot.escalations import format_escalation, get_escalation
 from dockpilot.holds import expire_holds
 from dockpilot.llm_reader import read_message_ai
@@ -50,7 +52,8 @@ class App:
         try:
             expire_holds(conn, self.clock)
             notify_allocation(conn, settle_requests(conn, self.clock, self.settings), self.clock, self.settings)
-            check_warehouse_timeouts(conn, self.clock, self.settings, out=self.log)
+            notify_warehouse_timeout(conn, check_warehouse_timeouts(conn, self.clock, self.settings, out=self.log),
+                                     self.clock)
             check_silent_drivers(conn, self.clock, self.settings, out=self.log)
         finally:
             conn.close()
@@ -208,7 +211,9 @@ class Handler(BaseHTTPRequestHandler):
         except (ValueError, LookupError) as exc:
             status, payload, extra = 409, {"error": str(exc)}, []
         except Exception:
-            status, payload, extra = 500, {"error": "Something went wrong. Please try again."}, []
+            traceback.print_exc()  # for whoever runs the server; the driver only sees the plain sentence
+            status, payload, extra = 500, {"error": "Sorry, something went wrong on my side. "
+                                                    "Please send that again in a moment."}, []
         finally:
             conn.close()
         self._send(status, payload, headers=extra[0] if extra else None)
