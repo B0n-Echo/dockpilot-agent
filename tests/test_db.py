@@ -50,11 +50,11 @@ def test_original_tables_untouched(work_db):
 
 
 def test_new_tables_exist(work_db):
-    """The DockPilot tables (3 from dp-02, 2 login tables from dp-18) are added, for 23 tables in total."""
+    """The DockPilot tables (3 from dp-02, 2 login tables from dp-18, conversation_state from dp-14) are added, for 24 tables in total."""
     tables = _tables(work_db)
     assert NEW_TABLES <= tables
-    assert {"login_codes", "driver_sessions"} <= tables
-    assert len(tables) == 23
+    assert {"login_codes", "driver_sessions", "conversation_state"} <= tables
+    assert len(tables) == 24
 
 
 def test_source_unchanged_after_init(work_db):

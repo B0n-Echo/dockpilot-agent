@@ -2,7 +2,7 @@
   "title": "DockPilot finds late trucks a slot they can really use, holds it safely, and hands the rest to a person",
   "lede": "A progress note in plain words. DockPilot helps a warehouse when trucks run late: it works out which unloading slots still fit, offers the best ones, and makes sure two drivers can never be given the same slot. Built on the practice data from 4 August 2026.",
   "updated": "2026-11-25",
-  "checks_passing": 107,
+  "checks_passing": 121,
   "rules_checked": 15,
   "source_changes": 0,
   "journey": [
@@ -158,19 +158,20 @@
       "status": "done",
       "what": "Only a real driver with a trip in progress or a booked slot can chat: phone number plus a one-time code.",
       "where": "auth.py",
-      "commit": ""
+      "commit": "0992a77"
     },
     {
       "id": "dp-14",
       "name": "Conversation",
-      "status": "next",
+      "status": "done",
       "what": "Talks with the driver: asks one clear question when needed, offers options, and always explains a refusal.",
-      "where": ""
+      "where": "conversation.py",
+      "commit": ""
     },
     {
       "id": "dp-15",
       "name": "Web chat page",
-      "status": "planned",
+      "status": "next",
       "what": "A simple local web page: the driver logs in, then chats with DockPilot like on WhatsApp; a warehouse view confirms or rejects requests.",
       "where": ""
     },

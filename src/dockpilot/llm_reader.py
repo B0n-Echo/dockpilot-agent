@@ -92,7 +92,8 @@ def _validate(data, received_at):
 def read_message_ai(text, received_at, call=None):
     """Read a message with the AI if a key and model are set; on any problem return the rules' Reading.
 
-    call: optional stand-in for the network (tests pass a fake). "Ask first" from the rules always wins.
+    call: optional stand-in for the network (tests pass a fake). The rules' "ask first" wins only when they saw
+    a relative delay and no clock time ("late by one hour"); otherwise the AI's reading stands.
     """
     rules = read_message(text, received_at)
     if call is None:
@@ -108,7 +109,8 @@ def read_message_ai(text, received_at, call=None):
         reading = _validate(json.loads(raw), received_at)
     except (OSError, ValueError, KeyError, TypeError, IndexError):
         return rules
-    return replace(reading, needs_clarification=reading.needs_clarification or rules.needs_clarification)
+    caution = rules.needs_clarification and rules.delay_minutes is not None and rules.eta is None
+    return replace(reading, needs_clarification=reading.needs_clarification or caution)
 
 
 if __name__ == "__main__":

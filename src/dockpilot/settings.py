@@ -49,6 +49,12 @@ class Settings:
     session_hours: int = 12
     """How long a driver stays logged in: one driving shift (dp-18)."""
 
+    nudge_after_minutes: int = 5
+    """No reply to the agent's question for this long: send one nudge (team rule, dp-14)."""
+
+    close_after_minutes: int = 5
+    """No reply this long after the nudge: close the chat (team rule, dp-14)."""
+
 
 SETTINGS = Settings()
 """The shared settings with the agreed defaults."""

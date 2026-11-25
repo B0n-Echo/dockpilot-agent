@@ -21,6 +21,8 @@ def test_defaults_match_agreed_values():
         "login_code_minutes": 5,
         "login_max_tries": 3,
         "session_hours": 12,
+        "nudge_after_minutes": 5,
+        "close_after_minutes": 5,
     }
 
 
