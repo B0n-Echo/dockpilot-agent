@@ -18,6 +18,9 @@ def test_defaults_match_agreed_values():
         "warehouse_timeout_minutes": 30,
         "eta_buffer_minutes": 30,
         "max_options": 3,
+        "login_code_minutes": 5,
+        "login_max_tries": 3,
+        "session_hours": 12,
     }
 
 

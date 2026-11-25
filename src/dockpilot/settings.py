@@ -40,6 +40,15 @@ class Settings:
     max_options: int = 3
     """How many slot options a driver is shown at once (D5 / D11)."""
 
+    login_code_minutes: int = 5
+    """How long a one-time login code stays valid (dp-18)."""
+
+    login_max_tries: int = 3
+    """Wrong tries allowed before a login code is burned (dp-18)."""
+
+    session_hours: int = 12
+    """How long a driver stays logged in: one driving shift (dp-18)."""
+
 
 SETTINGS = Settings()
 """The shared settings with the agreed defaults."""
