@@ -16,10 +16,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from dockpilot import db, paths
+from dockpilot.allocation import settle_requests
 from dockpilot.auth import end_session, get_session, request_code, verify_code
 from dockpilot.bookings import PENDING, check_warehouse_timeouts, confirm_booking, reject_booking
 from dockpilot.clock import DemoClock, to_iso
-from dockpilot.conversation import check_silent_drivers, handle_message, notify_booking_result
+from dockpilot.conversation import check_silent_drivers, handle_message, notify_allocation, notify_booking_result
 from dockpilot.escalations import format_escalation, get_escalation
 from dockpilot.holds import expire_holds
 from dockpilot.llm_reader import read_message_ai
@@ -44,10 +45,11 @@ class App:
         self.lock, self.log = threading.Lock(), io.StringIO()
 
     def tick(self):
-        """Timer work: expire holds, chase the warehouse, nudge or close silent chats."""
+        """Timer work: expire holds, settle rush-hour slot rivals, chase the warehouse, nudge or close silent chats."""
         conn = db.connect(self.db_path)
         try:
             expire_holds(conn, self.clock)
+            notify_allocation(conn, settle_requests(conn, self.clock, self.settings), self.clock, self.settings)
             check_warehouse_timeouts(conn, self.clock, self.settings, out=self.log)
             check_silent_drivers(conn, self.clock, self.settings, out=self.log)
         finally:
@@ -229,7 +231,7 @@ def make_server(app, host="127.0.0.1", port=8001):
     return ThreadingHTTPServer((host, port), handler)
 
 
-def _timer(app, seconds=30):
+def _timer(app, seconds=5):
     """Run app.tick every `seconds`, forever (daemon thread)."""
     while True:
         time.sleep(seconds)
@@ -241,12 +243,12 @@ def _timer(app, seconds=30):
 
 
 def _has_latest_tables(path):
-    """True if the working database exists and already has every migration (dp-14's table is the newest)."""
+    """True if the working database exists and already has every migration (dp-10's table is the newest)."""
     if not Path(path).exists():
         return False
     conn = db.connect(path)
     try:
-        return conn.execute("SELECT 1 FROM sqlite_master WHERE name = 'conversation_state'").fetchone() is not None
+        return conn.execute("SELECT 1 FROM sqlite_master WHERE name = 'slot_requests'").fetchone() is not None
     finally:
         conn.close()
 

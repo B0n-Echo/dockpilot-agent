@@ -6,12 +6,13 @@ import uuid
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 
+from dockpilot.allocation import request_slot
 from dockpilot.auth import LIVE, choose_shipment, get_session
 from dockpilot.bookings import convert_hold
 from dockpilot.clock import to_iso
 from dockpilot.escalations import SHORT, create_escalation, deliver, escalate_if_no_options
 from dockpilot.feasibility import latest_eta
-from dockpilot.holds import expire_holds, get_hold, place_hold
+from dockpilot.holds import expire_holds, get_hold
 from dockpilot.llm_reader import read_message_ai
 from dockpilot.reader import DELAY, _next_occurrence
 from dockpilot.settings import SETTINGS
@@ -148,21 +149,33 @@ def _offer(conn, shipment, thread, key, clock, settings, intro=""):
 
 
 def _hold_and_list(conn, shipment, thread, opts, pick, key, clock, settings, intro=""):
-    """Hold option `pick` (or the next free one if it was just taken) and list the others."""
+    """Ask for option `pick` (or the next free one if it was just taken) through the D7 policy (dp-10), then list the
+    others; in a rush the driver waits for the collection window instead."""
     for j in [pick] + [k for k in range(len(opts)) if k != pick]:
-        res = place_hold(conn, shipment, opts[j]["slots"], f"{key}:{j}", clock, settings, thread_id=thread)
-        if res.placed:
+        res = request_slot(conn, shipment, opts[j]["slots"], f"{key}:{j}", clock, settings, thread_id=thread)
+        if res.status in ("HELD", "WAITING"):
             break
     else:
         _set_state(conn, thread, "NOTHING", {}, clock)
         return Reply(True, f"{intro}Those slots were just taken by other drivers. Please send your arrival time again.",
                      state="NOTHING")
+    if res.status == "WAITING":
+        o = opts[j]
+        _set_state(conn, thread, "CHOICE", {"options": opts, "held": j, "hold": None, "request": res.request_id}, clock)
+        return Reply(True, f"{intro}It's busy right now: I'm checking who gets {o['dock']} {_hm(o['start'])} and will "
+                           "tell you within a minute.", state="CHOICE", options=tuple(opts))
+    extra = " I've also asked a coordinator whether an earlier slot can be freed for you." if res.alert else ""
+    return _held_reply(conn, thread, opts, j, res.hold, clock, intro, extra)
+
+
+def _held_reply(conn, thread, opts, j, hold, clock, intro="", extra=""):
+    """Remember the held option and tell the driver: "You can make D2 12:00–13:00 (held …). Reply 1 to book it…"."""
     o = opts[j]
     others = "".join(f", {k + 1} for {p['dock']} {_hm(p['start'])}" for k, p in enumerate(opts) if k != j)
-    _set_state(conn, thread, "CHOICE", {"options": opts, "held": j, "hold": res.hold.group_id}, clock)
+    _set_state(conn, thread, "CHOICE", {"options": opts, "held": j, "hold": hold.group_id}, clock)
     return Reply(True, f"{intro}You can make {o['dock']} {_hm(o['start'])}–{_hm(o['end'])} (held for you until "
-                       f"{res.hold.expires_at:%H:%M}). Reply {j + 1} to book it{others}.",
-                 state="CHOICE", options=tuple(opts), hold_group=res.hold.group_id)
+                       f"{hold.expires_at:%H:%M}). Reply {j + 1} to book it{others}.{extra}",
+                 state="CHOICE", options=tuple(opts), hold_group=hold.group_id)
 
 
 def _ask_eta(conn, shipment, thread, r, clock):
@@ -233,6 +246,9 @@ def _answer_eta(conn, shipment, thread, text, r, note, key, clock, settings):
 def _answer_choice(conn, shipment, thread, text, r, note, key, clock, settings):
     """Answer to the options: 1/yes books the held slot, 2/3 holds another, no lets the hold run out."""
     opts, held = note["options"], note["held"]
+    if note.get("hold") is None:
+        _set_state(conn, thread, "CHOICE", note, clock)
+        return Reply(True, "Still deciding between the trucks that asked, one moment.", state="CHOICE")
     m = re.fullmatch(r"\s*(?:option\s*)?(\d)\s*\.?\s*", text.lower())
     n = int(m.group(1)) - 1 if m and 1 <= int(m.group(1)) <= len(opts) else (held if r.intent == "CONFIRM" else None)
     if n == held:
@@ -390,6 +406,8 @@ def check_silent_drivers(conn, clock, settings=SETTINGS, out=None):
            WHERE cs.awaiting IN ('ETA', 'CHOICE') AND t.thread_status <> 'CLOSED'""").fetchall()
     for row in rows:
         thread, note, asked = row["thread_id"], json.loads(row["note"]), datetime.fromisoformat(row["asked_at"])
+        if row["awaiting"] == "CHOICE" and note.get("hold") is None:
+            continue  # still in a collection window (dp-10)
         if row["nudged_at"] is None and now >= asked + timedelta(minutes=settings.nudge_after_minutes):
             if row["awaiting"] == "CHOICE":
                 o = note["options"][note["held"]]
@@ -416,3 +434,22 @@ def check_silent_drivers(conn, clock, settings=SETTINGS, out=None):
                          (to_iso(now), thread))
             done.append({"thread_id": thread, "action": "CLOSED", "escalation_id": esc and esc.escalation_id})
     return done
+
+
+def notify_allocation(conn, decisions, clock, settings=SETTINGS):
+    """Tell each driver how a collection window ended (dp-10): the winner gets the held slot, a loser the reason and
+    fresh options (R5). Returns the replies posted."""
+    out = []
+    for d in decisions:
+        _, note = _state(conn, d.thread_id) if d.thread_id else (None, {})
+        if note.get("request") != d.request_id:
+            continue  # no chat, or the driver has moved on
+        if d.status in ("WON", "NEAR_TIE"):
+            extra = (" Another truck asked at almost the same time, so a coordinator may still change this."
+                     if d.status == "NEAR_TIE" else "")
+            reply = _held_reply(conn, d.thread_id, note["options"], note["held"], d.hold, clock, extra=extra)
+        else:
+            reply = _offer(conn, d.shipment_id, d.thread_id, f"{d.thread_id}:{d.request_id}", clock, settings,
+                           intro=f"{d.reason} ")
+        out.append(_finish(conn, d.thread_id, reply, clock))
+    return out

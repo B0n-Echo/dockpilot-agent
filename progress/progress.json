@@ -2,7 +2,7 @@
   "title": "DockPilot finds late trucks a slot they can really use, holds it safely, and hands the rest to a person",
   "lede": "A progress note in plain words. DockPilot helps a warehouse when trucks run late: it works out which unloading slots still fit, offers the best ones, and makes sure two drivers can never be given the same slot. Built on the practice data from 4 August 2026.",
   "updated": "2026-11-25",
-  "checks_passing": 129,
+  "checks_passing": 136,
   "rules_checked": 15,
   "source_changes": 0,
   "journey": [
@@ -174,19 +174,20 @@
       "status": "done",
       "what": "A simple local web page: the driver logs in, then chats with DockPilot like on WhatsApp; a warehouse view confirms or rejects requests.",
       "where": "webapp.py, static/",
-      "commit": ""
+      "commit": "990035e"
     },
     {
       "id": "dp-10",
       "name": "Fair choice between trucks",
-      "status": "next",
+      "status": "done",
       "what": "Decides who gets a slot when several trucks want it, with priority loads protected and close calls sent to a person.",
-      "where": ""
+      "where": "allocation.py",
+      "commit": ""
     },
     {
       "id": "dp-11",
       "name": "Stress test",
-      "status": "planned",
+      "status": "next",
       "what": "Many programs race for one slot, 100 times over, to prove nothing is ever double-booked.",
       "where": ""
     },

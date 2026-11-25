@@ -55,6 +55,9 @@ class Settings:
     close_after_minutes: int = 5
     """No reply this long after the nudge: close the chat (team rule, dp-14)."""
 
+    near_tie_minutes: int = 15
+    """Two rivals with the same priority whose delays differ by this much or less are a near-tie (R4, dp-10)."""
+
 
 SETTINGS = Settings()
 """The shared settings with the agreed defaults."""
