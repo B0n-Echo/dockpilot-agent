@@ -31,7 +31,8 @@ REASONS = [("TRAFFIC", r"traffic"), ("BREAKDOWN", r"tyre|tire|breakdown|puncture
 
 @dataclass(frozen=True)
 class Reading:
-    """What a message says: intent, arrival time and how sure, delay, reason, limits, urgency, shipment."""
+    """What a message says: intent, arrival time and how sure, delay, reason, limits, urgency, shipment,
+    and which reader produced it (read_by: "rules" or "ai")."""
 
     intent: str
     eta: object = None
@@ -43,6 +44,7 @@ class Reading:
     urgent: bool = False
     shipment_ref: str = None
     needs_clarification: bool = False
+    read_by: str = "rules"
 
 
 def _next_occurrence(hour, minute, ampm, received_at):
