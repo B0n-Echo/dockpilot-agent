@@ -40,4 +40,5 @@ def test_key_outcomes(run):
     assert "Confirmed: D1 at 20:00" in (out / "S10.md").read_text()  # B1 + B4: the delay reaches SHP1020
     assert "The warehouse hasn't answered about D6 12:30" in (out / "S06.md").read_text()  # timeout, driver told
     assert "No slot fits an arrival at 18:30" in (out / "S05.md").read_text()
+    assert "### Coordinator hand-off (NO_FEASIBLE_SLOT" in (out / "S05.md").read_text()  # D10's filled record
     assert sum(v["defects"] for v in m["cases"].values()) == 0

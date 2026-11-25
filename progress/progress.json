@@ -206,14 +206,15 @@
       "status": "done",
       "what": "Replays the client's recorded cases end to end and reports the results.",
       "where": "scenarios.py, docs/scenarios/",
-      "commit": ""
+      "commit": "8c707ed"
     },
     {
       "id": "dp-17",
       "name": "Write-up",
-      "status": "next",
+      "status": "done",
       "what": "Explains DockPilot and how to run it, with examples from the replays.",
-      "where": ""
+      "where": "README.md, docs/03_decision_register.md",
+      "commit": ""
     }
   ],
   "choices": [
@@ -236,5 +237,5 @@
       ]
     }
   ],
-  "limits": "Honest limits today: the login code is shown on screen instead of sent by SMS, and the chat is a local web page (no WhatsApp yet). Hand-offs to coordinators appear on the warehouse page, and coordinators can't mark them as handled or move another truck's booking yet. The agent doesn't yet use a driver's own limits (\"after 12\", \"must leave by 1:30\") when choosing slots."
+  "limits": "Honest limits today: the login code is shown on screen instead of sent by SMS, and the chat is a local web page (no WhatsApp yet). Coordinators see hand-offs but can't mark them handled or move another truck's booking yet. A driver's own limits (\"after 12\", \"must leave by 1:30\") are read but not yet used to choose slots, and a no-show truck isn't messaged. Timings the client hasn't confirmed run on stated defaults."
 }

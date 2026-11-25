@@ -21,6 +21,7 @@ from dockpilot.auth import request_code, verify_code
 from dockpilot.bookings import PENDING, check_warehouse_timeouts, confirm_booking
 from dockpilot.clock import IST, FakeClock, to_iso
 from dockpilot.conversation import _thread_for
+from dockpilot.escalations import format_escalation, get_escalation
 from dockpilot.conversation import (check_silent_drivers, handle_message, notify_allocation, notify_booking_result,
                                     notify_warehouse_timeout)
 from dockpilot.feasibility import check_feasibility
@@ -358,6 +359,11 @@ def transcript(rp, case, outcome):
     if early:
         lines.append("\n*Note: this case starts before the 09:45 snapshot. Bookings are as of 09:45; "
                      "ETA updates from later than the step's time are ignored.*")
+    for (esc_id,) in rp.conn.execute("SELECT escalation_id FROM escalations WHERE shipment_id = ? ORDER BY created_at",
+                                     (c.shipment,)) if c.shipment else ():
+        esc = get_escalation(rp.conn, esc_id)
+        lines += ["", f"### Coordinator hand-off ({esc.reason_code}, {esc.created_at[11:16]})", "", "```",
+                  format_escalation(rp.conn, esc), "```"]
     return "\n".join(lines) + "\n"
 
 
