@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DockPilot · Warehouse</title>
+<style>
+  :root { --ink: #1f2933; --muted: #6b7280; --line: #e4e7eb; --green: #128c7e; --red: #b42318; }
+  body { margin: 0; font: 15px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--ink); background: #f5f7fa; }
+  header { background: #243b53; color: #fff; padding: 14px 24px; display: flex; align-items: center; gap: 16px; }
+  header h1 { font-size: 18px; margin: 0; flex: 1; }
+  header .clock { font-variant-numeric: tabular-nums; }
+  main { max-width: 960px; margin: 0 auto; padding: 20px 24px; }
+  h2 { font-size: 16px; margin: 24px 0 8px; }
+  table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 8px; overflow: hidden; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+  th { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  button { font: inherit; border: 0; border-radius: 6px; padding: 6px 12px; cursor: pointer; color: #fff; }
+  .ok { background: var(--green); } .no { background: var(--red); } .adv { background: #486581; }
+  .empty { color: var(--muted); padding: 12px; background: #fff; border-radius: 8px; }
+  .esc { background: #fff; border-left: 4px solid #d97706; border-radius: 6px; padding: 10px 14px; margin-bottom: 10px; }
+  .esc pre { margin: 6px 0 0; font-size: 12px; white-space: pre-wrap; color: #334e68; }
+</style>
+</head>
+<body>
+<header>
+  <h1>DockPilot · Warehouse view</h1>
+  <span>Demo time <b class="clock" id="clock">--:--</b></span>
+  <button class="adv" id="advance">+10 min</button>
+</header>
+<main>
+  <h2>Booking requests waiting for you</h2>
+  <div id="pending"></div>
+  <h2>Open escalations (for the coordinator)</h2>
+  <div id="escalations"></div>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const el = (tag, text, cls) => { const e = document.createElement(tag); if (text != null) e.textContent = text; if (cls) e.className = cls; return e; };
+
+async function api(method, path, body) {
+  const res = await fetch(path, { method, headers: { "Content-Type": "application/json" },
+                                  body: body ? JSON.stringify(body) : undefined });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) alert(data.error || "Something went wrong.");
+  return data;
+}
+
+async function act(path, body) { await api("POST", path, body); load(); }
+
+function renderPending(rows) {
+  if (!rows.length) return $("pending").replaceChildren(el("div", "Nothing waiting.", "empty"));
+  const table = el("table"), head = el("tr");
+  ["Shipment", "Driver", "Slot", "Waiting", ""].forEach((h) => head.appendChild(el("th", h)));
+  table.appendChild(head);
+  for (const p of rows) {
+    const tr = el("tr");
+    [p.shipment_id, p.driver, p.slot, `${p.waiting_min} min`].forEach((v) => tr.appendChild(el("td", v)));
+    const td = el("td"), yes = el("button", "Confirm", "ok"), no = el("button", "Reject", "no");
+    yes.onclick = () => act("/api/warehouse/confirm", { appointment_id: p.appointment_id });
+    no.onclick = () => { const reason = prompt("Reason for rejecting?", "Dock crew not available");
+                         if (reason !== null) act("/api/warehouse/reject", { appointment_id: p.appointment_id, reason }); };
+    no.style.marginLeft = "6px";
+    td.append(yes, no); tr.appendChild(td); table.appendChild(tr);
+  }
+  $("pending").replaceChildren(table);
+}
+
+function renderEscalations(rows) {
+  if (!rows.length) return $("escalations").replaceChildren(el("div", "None open.", "empty"));
+  $("escalations").replaceChildren(...rows.map((e) => {
+    const box = el("div", null, "esc");
+    box.append(el("b", `${e.reason} · ${e.shipment_id}`), el("pre", e.text));
+    return box;
+  }));
+}
+
+async function load() {
+  const data = await api("GET", "/api/warehouse");
+  $("clock").textContent = data.clock ? data.clock.slice(11, 16) : "--:--";
+  renderPending(data.pending || []);
+  renderEscalations(data.escalations || []);
+}
+
+$("advance").onclick = () => act("/api/clock/advance", { minutes: 10 });
+load(); setInterval(load, 5000);
+</script>
+</body>
+</html>

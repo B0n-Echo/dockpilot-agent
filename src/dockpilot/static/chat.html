@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DockPilot · Driver chat</title>
+<style>
+  :root { --green: #128c7e; --bubble: #dcf8c6; --bg: #ece5dd; --ink: #1f2933; --muted: #6b7280; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--ink);
+         background: #d1d7db; display: flex; justify-content: center; min-height: 100vh; }
+  .phone { width: 100%; max-width: 420px; min-height: 100vh; background: var(--bg); display: flex; flex-direction: column; }
+  header { background: var(--green); color: #fff; padding: 12px 16px; display: flex; align-items: center; gap: 10px; }
+  header .title { flex: 1; } header .name { font-weight: 600; } header .sub { font-size: 12px; opacity: .85; }
+  header button { background: none; border: 1px solid #ffffff80; color: #fff; border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+  .login { padding: 24px 20px; display: flex; flex-direction: column; gap: 12px; }
+  .card { background: #fff; border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+  label { font-size: 13px; color: var(--muted); }
+  input { font: inherit; padding: 10px 12px; border: 1px solid #cbd2d9; border-radius: 8px; width: 100%; }
+  .btn { font: inherit; background: var(--green); color: #fff; border: 0; border-radius: 8px; padding: 10px; cursor: pointer; }
+  .btn:disabled { opacity: .5; }
+  .sms { background: #eef0f2; border-radius: 8px; padding: 10px 12px; font-size: 13px; color: var(--muted); }
+  .sms b { font-size: 20px; letter-spacing: 3px; color: var(--ink); }
+  .error { color: #b42318; font-size: 14px; }
+  .demo { font-size: 13px; color: var(--muted); }
+  .demo li { cursor: pointer; margin: 4px 0; } .demo li:hover { color: var(--ink); }
+  .msgs { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 6px; }
+  .msg { max-width: 82%; padding: 7px 10px 4px; border-radius: 8px; background: #fff; white-space: pre-wrap;
+         box-shadow: 0 1px 1px #0000001a; }
+  .msg.me { align-self: flex-end; background: var(--bubble); }
+  .msg .at { display: block; text-align: right; font-size: 11px; color: var(--muted); }
+  .note { align-self: center; background: #fff8c5; font-size: 13px; padding: 5px 10px; border-radius: 8px; }
+  form.send { display: flex; gap: 8px; padding: 8px; background: #f0f0f0; }
+  form.send input { border-radius: 20px; }
+  form.send button { border-radius: 20px; padding: 0 16px; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="phone">
+  <header>
+    <div class="title"><div class="name" id="who">DockPilot</div><div class="sub" id="sub">Driver chat</div></div>
+    <button id="logout" hidden>Logout</button>
+  </header>
+
+  <section class="login" id="login">
+    <div class="card">
+      <label for="phone">Your phone number</label>
+      <input id="phone" inputmode="tel" placeholder="e.g. 9000010013" autocomplete="off">
+      <button class="btn" id="send-code">Send code</button>
+      <div class="sms" id="sms" hidden>Demo SMS: your DockPilot code is <b id="sms-code"></b></div>
+      <div id="code-box" hidden>
+        <label for="code">Code</label>
+        <input id="code" inputmode="numeric" maxlength="6" autocomplete="one-time-code">
+      </div>
+      <button class="btn" id="verify" hidden>Log in</button>
+      <div class="error" id="login-error"></div>
+    </div>
+    <div class="card demo">
+      <b>Demo drivers</b> (dummy data, click to fill)
+      <ul>
+        <li data-phone="9000010013">Kailash · 9000010013: vague delay ("late by one hour")</li>
+        <li data-phone="9000010004">Sandeep · 9000010004: two trips today</li>
+        <li data-phone="9000010014">Pradeep · 9000010014: heavy load, long unload</li>
+        <li data-phone="9000010008">Ashok · 9000010008: both trips cancelled (refused)</li>
+      </ul>
+    </div>
+  </section>
+
+  <section id="chat" hidden style="display:flex;flex-direction:column;flex:1;min-height:0">
+    <div class="msgs" id="msgs"></div>
+    <form class="send" id="send">
+      <input id="text" placeholder="Type a message" autocomplete="off" maxlength="1000">
+      <button class="btn">Send</button>
+    </form>
+  </section>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let greeting = "", shown = -1, timer = null;
+
+async function api(method, path, body) {
+  const res = await fetch(path, { method, headers: { "Content-Type": "application/json" },
+                                  body: body ? JSON.stringify(body) : undefined });
+  return { status: res.status, data: await res.json().catch(() => ({})) };
+}
+
+function bubble(text, cls, at) {
+  const div = document.createElement("div");
+  div.className = cls;
+  div.textContent = text;                       // plain text only, never HTML
+  if (at) { const s = document.createElement("span"); s.className = "at"; s.textContent = at; div.appendChild(s); }
+  $("msgs").appendChild(div);
+}
+
+function render(data) {
+  $("who").textContent = data.driver;
+  $("sub").textContent = data.trip ? `Trip ${data.trip}` : "Driver chat";
+  if (data.messages.length === shown) return;
+  shown = data.messages.length;
+  $("msgs").replaceChildren();
+  if (greeting) bubble(greeting, "note");
+  for (const m of data.messages) bubble(m.text, m.from === "DRIVER" ? "msg me" : "msg", m.at);
+  $("msgs").scrollTop = $("msgs").scrollHeight;
+}
+
+async function refresh() {
+  const { status, data } = await api("GET", "/api/chat");
+  if (status === 401) return showLogin();
+  render(data);
+}
+
+function showChat() {
+  $("login").hidden = true; $("chat").hidden = false; $("logout").hidden = false;
+  shown = -1; refresh(); clearInterval(timer); timer = setInterval(refresh, 3000);
+  $("text").focus();
+}
+
+function resetLogin() {
+  $("sms").hidden = $("code-box").hidden = $("verify").hidden = true;
+  $("code").value = ""; $("login-error").textContent = "";
+}
+
+function showLogin() {
+  clearInterval(timer); resetLogin();
+  $("login").hidden = false; $("chat").hidden = true; $("logout").hidden = true;
+  $("who").textContent = "DockPilot"; $("sub").textContent = "Driver chat";
+}
+
+$("send-code").onclick = async () => {
+  resetLogin();
+  const { status, data } = await api("POST", "/api/login/start", { phone: $("phone").value });
+  if (status !== 200) { $("login-error").textContent = data.error; return; }
+  $("sms-code").textContent = data.demo_sms;
+  $("sms").hidden = $("code-box").hidden = $("verify").hidden = false;
+  $("code").focus();
+};
+
+$("verify").onclick = async () => {
+  $("login-error").textContent = "";
+  const { status, data } = await api("POST", "/api/login/verify", { phone: $("phone").value, code: $("code").value });
+  if (status !== 200) { $("login-error").textContent = data.error; return; }
+  greeting = data.greeting; showChat();
+};
+
+$("code").onkeydown = (e) => { if (e.key === "Enter") $("verify").click(); };
+$("phone").onkeydown = (e) => { if (e.key === "Enter") $("send-code").click(); };
+document.querySelectorAll(".demo li").forEach((li) => li.onclick = () => { $("phone").value = li.dataset.phone; });
+
+$("send").onsubmit = async (e) => {
+  e.preventDefault();
+  const text = $("text").value.trim();
+  if (!text) return;
+  $("text").value = "";
+  bubble(text, "msg me");
+  const { status, data } = await api("POST", "/api/chat", { text, ref: crypto.randomUUID() });
+  if (status === 401) return showLogin();
+  if (status !== 200) bubble(data.error || "Something went wrong.", "note");
+  shown = -1; refresh();
+};
+
+$("logout").onclick = async () => { await api("POST", "/api/logout"); greeting = ""; showLogin(); };
+
+// already logged in (cookie)? go straight to the chat
+api("GET", "/api/chat").then(({ status }) => { if (status === 200) showChat(); });
+</script>
+</body>
+</html>

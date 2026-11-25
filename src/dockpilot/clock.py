@@ -5,6 +5,8 @@ computer's time directly. Tests pass a FakeClock they can move forward; live use
 a SystemClock.
 """
 
+import threading
+import time
 from datetime import datetime, timedelta, timezone
 
 IST = timezone(timedelta(hours=5, minutes=30), "IST")
@@ -70,6 +72,30 @@ class FakeClock:
             raise ValueError("a clock cannot go backwards")
         self._now += step
         return self._now
+
+
+class DemoClock:
+    """A clock for the web demo: starts at the snapshot time and runs forward in real time; advance() jumps ahead."""
+
+    def __init__(self, start=SNAPSHOT_TIME):
+        """Start showing `start` now (must carry a time zone)."""
+        if start.tzinfo is None:
+            raise ValueError("start must carry a time zone")
+        self._start, self._t0, self._extra, self._lock = start, time.monotonic(), timedelta(0), threading.Lock()
+
+    def now(self):
+        """Snapshot time plus real time passed plus every jump."""
+        with self._lock:
+            return self._start + timedelta(seconds=time.monotonic() - self._t0) + self._extra
+
+    def advance(self, minutes=0, seconds=0):
+        """Jump forward (never backwards); returns the new time."""
+        step = timedelta(minutes=minutes, seconds=seconds)
+        if step < timedelta(0):
+            raise ValueError("a clock cannot go backwards")
+        with self._lock:
+            self._extra += step
+        return self.now()
 
 
 def to_iso(dt):
