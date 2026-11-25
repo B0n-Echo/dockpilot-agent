@@ -1,8 +1,8 @@
 {
   "title": "DockPilot finds late trucks a slot they can really use, holds it safely, and hands the rest to a person",
   "lede": "A progress note in plain words. DockPilot helps a warehouse when trucks run late: it works out which unloading slots still fit, offers the best ones, and makes sure two drivers can never be given the same slot. Built on the practice data from 4 August 2026.",
-  "updated": "2026-11-25",
-  "checks_passing": 147,
+  "updated": "2026-11-26",
+  "checks_passing": 153,
   "rules_checked": 15,
   "source_changes": 0,
   "journey": [
@@ -182,7 +182,7 @@
       "status": "done",
       "what": "The driver always hears something: right after picking a slot, while the warehouse decides, and when the warehouse is too slow and a coordinator takes over. Found in a live test.",
       "where": "conversation.py, static/chat.html",
-      "commit": ""
+      "commit": "c9a8b8d"
     },
     {
       "id": "dp-10",
@@ -203,14 +203,15 @@
     {
       "id": "dp-16",
       "name": "Replay of real cases",
-      "status": "next",
+      "status": "done",
       "what": "Replays the client's recorded cases end to end and reports the results.",
-      "where": ""
+      "where": "scenarios.py, docs/scenarios/",
+      "commit": ""
     },
     {
       "id": "dp-17",
       "name": "Write-up",
-      "status": "planned",
+      "status": "next",
       "what": "Explains DockPilot and how to run it, with examples from the replays.",
       "where": ""
     }

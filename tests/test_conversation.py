@@ -282,3 +282,33 @@ def test_waiting_for_warehouse_then_timeout_tells_driver_once(conn):
     assert notify_warehouse_timeout(conn, check_warehouse_timeouts(conn, clock, out=io.StringIO()), clock) == []
     assert _say(conn, sid, "any news?", clock).text.startswith(
         "I'm still checking D2 12:00 with the warehouse; a coordinator is on it.")
+
+
+def test_b1_latest_message_is_answered_after_which_trip(conn):
+    """dp-16 B1: DRV004 asks about the yard, then reports a delay; after "020" the delay is handled."""
+    clock = _clock(9, 31)
+    sid = _login(conn, clock, "9000010004")
+    _say(conn, sid, "Has a new dock been assigned?", clock)
+    _say(conn, sid, "I will be late by 45 minutes.", clock)
+    assert _say(conn, sid, "020", clock).text.startswith("Thanks. Your plan was 18:00. Will you reach around 18:45?")
+
+
+def test_b2_same_report_resent_gets_the_same_reply_and_nothing_new(conn):
+    """dp-16 B2 (THR001 / THR009): the same text 62 s later with a new id is a resend: same reply, one hold."""
+    clock = _clock(9, 34)
+    sid = _login(conn, clock, "9000010006")
+    text = "Traffic after Shahpura. Reaching around 11:20. Any slot after 12?"
+    first = handle_message(conn, sid, text, clock, reader=read_message, message_ref="wa-9001")
+    clock.advance(seconds=62)
+    again = handle_message(conn, sid, text, clock, reader=read_message, message_ref="wa-9009")
+    assert again.text == first.text
+    assert _count(conn, "SELECT COUNT(*) FROM slot_holds WHERE shipment_id = 'SHP1006'") == 1
+    assert _count(conn, "SELECT is_duplicate FROM chat_messages WHERE external_message_id = 'wa-9009'") == 1
+
+
+def test_b3_in_the_yard_picks_the_trip_at_the_warehouse(conn):
+    """dp-16 B3 (THR008): "I'm in the yard" means SHP1004 (waiting at the warehouse), no "which trip?"."""
+    clock = _clock(9, 27)
+    sid = _login(conn, clock, "9000010004")
+    reply = _say(conn, sid, "I reached late and am in the yard. Has a new dock been assigned?", clock)
+    assert reply.text.startswith("Your booking: D2 at 09:00")

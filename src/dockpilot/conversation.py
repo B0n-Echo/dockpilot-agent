@@ -62,16 +62,28 @@ def _hm(ts):
     return (datetime.fromisoformat(ts) if isinstance(ts, str) else ts).strftime("%H:%M")
 
 
-def _post(conn, thread, sender, ref, text, clock, reading=None, external=None, intent=None):
-    """Save one message in the client's chat_messages table."""
+def _post(conn, thread, sender, ref, text, clock, reading=None, external=None, intent=None, duplicate=False):
+    """Save one message in the client's chat_messages table (duplicate=True marks a recognised resend, DA-12)."""
     conn.execute(
         """INSERT INTO chat_messages (chat_message_id, thread_id, sender_type, sender_reference, message_text, message_ts,
-               external_message_id, parsed_intent, extracted_eta_ts, requires_human_review)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (mid := _id("DPM"), thread, sender, ref, text, to_iso(clock.now()), external,
+               external_message_id, is_duplicate, parsed_intent, extracted_eta_ts, requires_human_review)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (mid := _id("DPM"), thread, sender, ref, text, to_iso(clock.now()), external, int(duplicate),
          reading.intent if reading else intent, to_iso(reading.eta) if reading and reading.eta else None,
          int(bool(reading and reading.needs_clarification))))
     return mid
+
+
+def _resend(conn, thread, text, clock):
+    """B2 (dp-16, DA-12): the same report (4+ words) again within 2 minutes, already answered and nothing since:
+    the earlier reply, or None. Short replies like "1" are not treated as resends."""
+    last = conn.execute("SELECT sender_type, message_text, message_ts FROM chat_messages WHERE thread_id = ? "
+                        "ORDER BY rowid DESC LIMIT 2", (thread,)).fetchall()
+    if (len(text.split()) >= 4 and len(last) == 2 and last[0][0] == "AGENT" and last[1][0] == "DRIVER"
+            and last[1][1].strip().lower() == text.strip().lower()
+            and clock.now() - datetime.fromisoformat(last[1][2]) <= timedelta(minutes=2)):
+        return last[0][1]
+    return None
 
 
 def _state(conn, thread):
@@ -323,7 +335,8 @@ def _trip_label(t):
 
 
 def _match_trip(trips, text, asked):
-    """Which trip the message names: shipment id, order number or its last digits, vehicle, or first/second."""
+    """Which trip the message names: shipment id, order number or its last digits, vehicle, "in the yard" (the one
+    trip at the warehouse), or first/second."""
     up, flat = text.upper(), re.sub(r"\W", "", text.upper())
     for t in trips:
         if t.shipment_id in up or t.order_reference in up or re.sub(r"\W", "", t.vehicle_reg) in flat:
@@ -333,6 +346,9 @@ def _match_trip(trips, text, asked):
         for t in trips:
             if int(n) in (int(t.order_reference[-3:]), int(t.shipment_id[-4:])):
                 return t.shipment_id
+    here = [t for t in trips if t.status in ("AT_GATE", "WAITING", "IN_DOCK")]
+    if len(here) == 1 and re.search(r"\b(yard|gate|reached|arrived|here|at the warehouse)\b", text.lower()):
+        return here[0].shipment_id  # B3 (dp-16): "I'm in the yard" means the trip that is at the warehouse
     if asked:
         words = {"1": 0, "first": 0, "2": 1, "second": 1, "3": 2, "third": 2}
         m = re.search(r"\b(first|second|third)\b", text.lower()) or re.fullmatch(r"\s*([123])\s*", text)
@@ -346,7 +362,8 @@ def _pick_shipment(conn, s, thread, text, r, awaiting, note, key, clock, setting
     pick = _match_trip(s.trips, text, awaiting == "SHIPMENT")
     if pick is None:
         names = [f"{t.order_reference} ({_trip_label(t)})" for t in s.trips]
-        _set_state(conn, thread, "SHIPMENT", {"parked": note.get("parked") or text}, clock)
+        keep = text if r.intent in BOOKING_INTENTS + ("CHECK_STATUS",) else note.get("parked") or text  # B1: latest
+        _set_state(conn, thread, "SHIPMENT", {"parked": keep}, clock)
         return Reply(True, f"You have {len(names)} trips today: {', '.join(names[:-1])} or {names[-1]}. "
                            "Which one is this about?", state="SHIPMENT")
     choose_shipment(conn, s.session_id, pick, clock)
@@ -394,6 +411,9 @@ def handle_message(conn, session_id, text, clock, settings=SETTINGS, reader=read
     if s is None:
         return Reply(False, "Please log in again.")
     thread = _open_thread(conn, s)
+    if thread and (again := _resend(conn, thread, text, clock)):
+        _post(conn, thread, "DRIVER", s.driver_id, text, clock, external=message_ref, duplicate=True)
+        return Reply(True, again, thread, _state(conn, thread)[0])
     if message_ref and thread:
         old = conn.execute("SELECT message_text FROM chat_messages WHERE thread_id = ? AND external_message_id = ?",
                            (thread, f"re:{message_ref}")).fetchone()
@@ -405,7 +425,9 @@ def handle_message(conn, session_id, text, clock, settings=SETTINGS, reader=read
     awaiting, note = _state(conn, thread)
     if SAFETY.search(text.lower()):
         reply = _safety(conn, s, thread, text, clock)
-    elif s.shipment_id is None:
+    elif s.shipment_id is None or awaiting == "SHIPMENT" or (  # B4 (dp-16): two trips, new topic -> ask again
+            len(s.trips) > 1 and awaiting == "NOTHING" and r.intent in BOOKING_INTENTS + ("CHECK_STATUS",)
+            and _match_trip(s.trips, text, False) != s.shipment_id):
         reply = _pick_shipment(conn, s, thread, text, r, awaiting, note, key, clock, settings, reader)
     elif awaiting == "ETA":
         reply = _answer_eta(conn, s.shipment_id, thread, text, r, note, key, clock, settings)
