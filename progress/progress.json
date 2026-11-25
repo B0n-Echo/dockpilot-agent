@@ -214,7 +214,7 @@
       "status": "done",
       "what": "Explains DockPilot and how to run it, with examples from the replays.",
       "where": "README.md, docs/03_decision_register.md",
-      "commit": ""
+      "commit": "31b6683"
     }
   ],
   "choices": [
