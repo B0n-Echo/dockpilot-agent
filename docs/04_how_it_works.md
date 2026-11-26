@@ -37,7 +37,7 @@ Tests always run with tracing off and LangSmith unreachable, whatever `.env` say
   - who gets a contested slot (D7)
   - hold it (one writer at a time)
   - book it, escalate it
-- **A timer** (every 5 s in the web demo) expires holds, settles rush-hour rivals, chases the warehouse after 30 min, and nudges or closes silent chats.
+- **A timer** (every 5 s in the web demo) expires holds, handles drift (a dock breaking, a no-show, a new arrival time recorded elsewhere), settles rush-hour rivals, chases the warehouse after 30 min, and nudges or closes silent chats.
 
 ## 2. One message, step by step (real traces)
 
@@ -133,7 +133,8 @@ web page ──► webapp.py routes
 timer (every 5 s) ──► holds.expire_holds · allocation.settle_requests → notify_allocation
                       bookings.check_warehouse_timeouts → escalations (+ deliver) → notify_warehouse_timeout
                       conversation.check_silent_drivers (nudge 5 min, close 10 min)
-replay only ──► lifecycle.handle_dock_event · mark_no_shows   (not yet on the web timer)
+timer (dp-22) ──► lifecycle.check_drift: handle_dock_event · mark_no_shows · recheck_booking (new arrival times)
+                  └─► conversation.notify_drift (driver told if their chat is open and idle)
 ```
 
 ## 4. What if it fails?

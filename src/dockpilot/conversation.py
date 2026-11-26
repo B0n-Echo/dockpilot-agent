@@ -621,3 +621,46 @@ def notify_warehouse_timeout(conn, escalations, clock):
                   "all the details. Someone will be in touch soon. Keep heading to the warehouse; your request is "
                   "still in place.", state="WAREHOUSE", escalation_id=esc.escalation_id), clock))
     return out
+
+
+def _slot_label(conn, appointment_id):
+    """A booking as "D3 09:00", with its start time."""
+    r = conn.execute("SELECT d.dock_code, sl.slot_start_ts FROM appointments a JOIN appointment_slots sl ON "
+                     "sl.slot_id = a.slot_id JOIN docks d ON d.dock_id = sl.dock_id WHERE a.appointment_id = ?",
+                     (appointment_id,)).fetchone()
+    return f"{r[0]} {_hm(r[1])}", datetime.fromisoformat(r[1])
+
+
+@trace.traced("tell drivers about drift", "timer", show_out=lambda out: f"{len(out)} driver(s) told" if out else "")
+def notify_drift(conn, items, clock, settings=SETTINGS):
+    """dp-22: tell a driver who has a chat open about this trip what changed (dock problem, no-show, new arrival
+    time) and what happens now; offers options the usual way. No open chat of ours, or a conversation already in
+    progress: nothing is sent (the work itself is already done). Returns the replies."""
+    out = []
+    for d in items:
+        row = conn.execute("SELECT thread_id FROM chat_threads WHERE shipment_id = ? AND thread_status <> 'CLOSED' "
+                           "AND thread_id LIKE 'DPT-%' ORDER BY opened_at DESC LIMIT 1",  # our chats only, never the client's
+                           (d.shipment_id,)).fetchone()
+        if not row or _state(conn, row[0])[0] != "NOTHING":
+            continue  # no chat of ours, or the driver is mid-conversation (already being helped): don't interrupt
+        thread, (old, start) = row[0], _slot_label(conn, d.appointment_id)
+        key = f"{thread}:drift:{d.kind}:{d.appointment_id}"
+        if d.kind == "DOCK_EVENT" and d.review.new_appointment_id:
+            new = _slot_label(conn, d.review.new_appointment_id)[0]
+            _set_state(conn, thread, "WAREHOUSE", {"appointment": d.review.new_appointment_id, "slot": new}, clock)
+            reply = Reply(True, f"{d.detail}, so your {old} booking can't go ahead. I've asked the warehouse for {new} "
+                                "instead; I'll tell you when they confirm.", state="WAREHOUSE",
+                          appointment_id=d.review.new_appointment_id)
+        elif d.kind == "DOCK_EVENT":
+            _set_state(conn, thread, "NOTHING", {}, clock)
+            reply = Reply(True, f"{d.detail}, so your {old} booking can't go ahead, and no other slot fits. I've passed "
+                                "this to a coordinator; they'll call you.", state="NOTHING",
+                          escalation_id=d.review.escalation and d.review.escalation.escalation_id)
+        elif d.kind == "NO_SHOW":
+            reply = _offer(conn, d.shipment_id, thread, key, clock, settings,
+                           intro=f"You missed {old} (no check-in within the grace time). ")
+        else:
+            reply = _offer(conn, d.shipment_id, thread, key, clock, settings,
+                           intro=f"Your new arrival time ({d.detail}) doesn't fit your {old} booking. ")
+        out.append(_finish(conn, thread, reply, clock))
+    return out

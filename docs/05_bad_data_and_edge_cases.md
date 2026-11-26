@@ -35,10 +35,10 @@ The answer sheet for "what if the data is wrong?" and "what if X breaks?". Every
 
 | Case | Example in the data | What DockPilot does | Proof |
 |---|---|---|---|
-| **Booking the truck can no longer reach** (DA-05) | 6 of 15 bookings | When the driver messages, their real arrival time is used and new options are offered. The old booking stays until the new one is confirmed (R1). A background re-check exists but runs **only in the replay** (see gaps). | dp-09; replay S01–S04 |
-| **A dock breaks after booking** (DA-06) | DEVT001 on D3 | The hit booking is re-homed, or a coordinator is told. **Replay only** (see gaps). | Replay S13 |
+| **Booking the truck can no longer reach** (DA-05) | 6 of 15 bookings; SHP1017 gets a new arrival time at 09:55 | When the driver messages, their real arrival time is used and new options are offered. When an arrival time is recorded **outside** the chat, the timer re-checks the booking and tells the driver if a chat is open (*"Your new arrival time (12:45) doesn't fit your D1 12:00 booking. You can make …"*). The old booking stays until the new one is confirmed (R1). | dp-09, dp-22; `test_drift.py` |
+| **A dock breaks after booking** (DA-06) | DEVT001 on D3 (SHP1005); DEVT003 D2 slowdown (SHP1004) | On the next timer tick the hit booking is re-homed (a new request for the warehouse) or a coordinator is told, once per event; a driver with a chat open is told why | dp-09, dp-22; `test_drift.py`; replay S13 |
 | **On the road with no booking** (DA-10) | SHP1012, SHP1016 | The driver can still log in and get options. Nobody is told proactively (see gaps). | Replay S02, S06 |
-| **No-show** | APT1007 at 10:35 | Marked NO_SHOW and new options found. The driver isn't messaged (see gaps). | Replay S14 |
+| **No-show** | APT1007 at 10:30 | Marked NO_SHOW by the timer; a driver with a chat open gets *"You missed D1 10:00 … You can make …"* with the best slot held | dp-09, dp-22; `test_drift.py`; screenshot in dp-22 |
 
 ## 2. Breaking cases (things going wrong while running)
 
@@ -63,10 +63,11 @@ The answer sheet for "what if the data is wrong?" and "what if X breaks?". Every
 
 ## 3. Gaps (honest list; each is in review-later)
 
+*Drift on the web timer was built in dp-22 (2026-11-26).*
+
 | Gap | Risk | Suggested fix |
 |---|---|---|
-| **Drift checks run only in the replay**, not on the web demo's timer (stale bookings, dock breakdowns, no-shows) | A truck whose dock breaks isn't re-homed until its driver writes | Put `lifecycle` on the web timer (planned as dp-22) |
-| **No-show and "no booking" trucks aren't messaged** | The driver doesn't know | Message the driver when a chat exists |
+| **Drivers without a chat open aren't told** about drift (dock problem, no-show, new arrival time) | They find out when they next write | Needs a real channel (SMS / WhatsApp) |
 | **No rate limit** on "Send code" or on messages | Someone could spam codes or messages | A small per-phone limit (SQLite) |
 | **Coordinators can't close escalations** | The warehouse page keeps resolved items | Acknowledge / resolve buttons |
 | **The AI is called even for "1" / "yes"** | 1.7 s and cost per short reply | Skip the AI for short replies |

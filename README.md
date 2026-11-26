@@ -40,7 +40,7 @@ hold (10 min, one writer at a time) → "1" → booking request ─────�
 warehouse confirms / rejects / says nothing for 30 min (→ coordinator) ───────── bookings.py, webapp.py
 ```
 
-During the day, `lifecycle.py` re-checks bookings when a dock breaks down or a truck doesn't show up.
+During the day, the timer (`lifecycle.check_drift`) re-checks bookings when a dock breaks down, a truck doesn't show up or a new arrival time is recorded, and tells the driver if they're chatting.
 
 ---
 
@@ -48,7 +48,7 @@ During the day, `lifecycle.py` re-checks bookings when a dock breaks down or a t
 
 You need [uv](https://docs.astral.sh/uv/). Python 3.12 is picked up automatically. There are no other dependencies.
 
-**Run the tests** (170 checks, about 25 seconds, all offline):
+**Run the tests** (177 checks, about 25 seconds, all offline):
 
 ```bash
 uv run pytest
@@ -169,7 +169,7 @@ Also measured:
 | `src/dockpilot/` | The code: one file per building block (see "How it works") |
 | `src/dockpilot/static/` | The two web pages (plain HTML + JavaScript) |
 | `src/dockpilot/migrations/` | DockPilot's own tables, added to a working copy of the data |
-| `tests/` | 170 checks, offline, on the real dummy data |
+| `tests/` | 177 checks, offline, on the real dummy data |
 | `data/source/` | The dataset exactly as received, with checksums |
 | `docs/` | Problem definition, data audit, decision register, and the replay output |
 | `progress/` | An internal build-progress page (`uv run python progress/server.py`) |
@@ -181,7 +181,7 @@ Also measured:
 - The login code is shown on screen instead of sent by SMS, and the chat is a local web page instead of WhatsApp.
 - Coordinators see hand-offs on the warehouse page but can't mark them handled, or move another truck's booking, yet.
 - A driver's own limits ("any slot after 12", "must leave before 1:30") are read but not yet used to choose slots.
-- A truck marked no-show gets new options, but no message reaches the driver.
+- Drivers who aren't chatting with DockPilot aren't told when their booking changes (no SMS / WhatsApp channel yet).
 - Timings that the business hasn't confirmed yet run on stated defaults in `src/dockpilot/settings.py`. These are the 30-minute warehouse timeout, the 30-minute buffer for vague arrival times, and the spike trigger (5 requests in 10 minutes).
 
 ---

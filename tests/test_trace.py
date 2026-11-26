@@ -150,9 +150,12 @@ def test_web_panel_shows_only_the_drivers_own_turns(conn, tmp_path):
 
 
 def test_quiet_timer_tick_is_not_saved(conn, tmp_path):
-    """A timer tick where nothing happened leaves no trace (the timer runs every 5 seconds)."""
-    App(tmp_path / "work.db", FakeClock(datetime(2026, 8, 4, 9, 19, tzinfo=IST))).tick()
-    assert conn.execute("SELECT COUNT(*) FROM trace_turns WHERE name = 'timer tick'").fetchone()[0] == 0
+    """A timer tick where nothing happened leaves no trace (the timer runs every 5 seconds). The first tick handles
+    the D3 breakdown (dp-22) and is kept; the second finds nothing new and is not."""
+    app = App(tmp_path / "work.db", FakeClock(datetime(2026, 8, 4, 9, 19, tzinfo=IST)))
+    app.tick()
+    app.tick()
+    assert conn.execute("SELECT COUNT(*) FROM trace_turns WHERE name = 'timer tick'").fetchone()[0] == 1
 
 
 def test_langsmith_needs_the_tracing_flag_as_well_as_the_key(monkeypatch):

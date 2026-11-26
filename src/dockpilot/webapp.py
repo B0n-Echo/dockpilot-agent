@@ -22,9 +22,10 @@ from dockpilot.auth import end_session, get_session, request_code, verify_code
 from dockpilot.bookings import PENDING, check_warehouse_timeouts, confirm_booking, reject_booking
 from dockpilot.clock import DemoClock, to_iso
 from dockpilot.conversation import (check_silent_drivers, handle_message, notify_allocation, notify_booking_result,
-                                    notify_warehouse_timeout)
+                                    notify_drift, notify_warehouse_timeout)
 from dockpilot.escalations import format_escalation, get_escalation
 from dockpilot.holds import expire_holds
+from dockpilot.lifecycle import check_drift
 from dockpilot.llm_reader import read_message_ai
 from dockpilot.settings import SETTINGS
 
@@ -45,6 +46,7 @@ class App:
         """Set up; the clock defaults to a DemoClock starting at the snapshot time."""
         self.db_path, self.clock, self.settings, self.reader = db_path, clock or DemoClock(), settings, reader
         self.lock, self.log = threading.Lock(), io.StringIO()
+        self.since = self.clock.now()  # dp-22: drift is checked for what happened after this
 
     def tick(self):
         """Timer work: expire holds, settle rush-hour slot rivals, chase the warehouse, nudge or close silent chats."""
@@ -58,6 +60,9 @@ class App:
     def _tick(self, conn):
         """The timer's jobs, in order."""
         expire_holds(conn, self.clock)
+        now = self.clock.now()
+        notify_drift(conn, check_drift(conn, self.clock, self.since, self.settings, out=self.log), self.clock, self.settings)
+        self.since = now
         notify_allocation(conn, settle_requests(conn, self.clock, self.settings), self.clock, self.settings)
         notify_warehouse_timeout(conn, check_warehouse_timeouts(conn, self.clock, self.settings, out=self.log),
                                  self.clock)

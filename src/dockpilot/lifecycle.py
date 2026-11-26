@@ -4,6 +4,7 @@ import json
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
+from dockpilot import trace
 from dockpilot.bookings import convert_hold
 from dockpilot.clock import to_iso
 from dockpilot.db import write_transaction
@@ -132,3 +133,49 @@ def handle_dock_event(conn, dock_event_id, clock, settings=SETTINGS, out=None):
               "escalation_id": esc.escalation_id if esc else None})
         reviews.append(Review(a["appointment_id"], False, [], options, esc, new_id))
     return reviews
+
+
+@dataclass(frozen=True)
+class Drift:
+    """dp-22: one thing that changed during the day (DOCK_EVENT, NO_SHOW or NEW_ETA) and what dp-09 did about it."""
+
+    kind: str
+    shipment_id: str
+    appointment_id: str
+    review: Review
+    detail: str
+
+
+def _shipment_of(conn, appointment_id):
+    """The shipment a booking belongs to."""
+    return conn.execute("SELECT shipment_id FROM appointments WHERE appointment_id = ?", (appointment_id,)).fetchone()[0]
+
+
+@trace.traced("drift check (dock events, no-shows, new arrival times)", "timer",
+              show_out=lambda ds: ", ".join(f"{d.kind} {d.shipment_id}" for d in ds))
+def check_drift(conn, clock, since, settings=SETTINGS, out=None):
+    """dp-22: run the dp-09 checks for whatever happened since the last timer tick: dock events now on record (each
+    once), no-shows, and new arrival times recorded outside our chat (our own ETA_DP- rows are skipped)."""
+    now, items = to_iso(clock.now()), []
+    handled = {json.loads(r[0] or "{}").get("dock_event_id")
+               for r in conn.execute("SELECT payload FROM events WHERE event_type = 'DOCK_EVENT_HANDLED'")}
+    for ev in conn.execute(
+            """SELECT e.dock_event_id, e.event_type, e.reason, d.dock_code FROM dock_status_events e
+               JOIN docks d ON d.dock_id = e.dock_id WHERE e.created_at <= ? ORDER BY e.created_at""", (now,)).fetchall():
+        if ev[0] in handled:
+            continue
+        detail = f"Dock {ev[3]} has a {ev[1].lower().replace('_', ' ')} ({ev[2][:1].lower() + ev[2][1:]})"
+        items += [Drift("DOCK_EVENT", _shipment_of(conn, r.appointment_id), r.appointment_id, r, detail)
+                  for r in handle_dock_event(conn, ev[0], clock, settings, out)]
+    items += [Drift("NO_SHOW", _shipment_of(conn, r.appointment_id), r.appointment_id, r, "no check-in in time")
+              for r in mark_no_shows(conn, clock, settings, out)]
+    for shipment, eta in conn.execute(
+            "SELECT shipment_id, declared_eta_ts FROM eta_updates WHERE created_at > ? AND created_at <= ? "
+            "AND eta_update_id NOT LIKE 'ETA_DP-%' ORDER BY created_at", (to_iso(since), now)).fetchall():
+        try:
+            r = recheck_booking(conn, shipment, clock, settings, out)
+        except LookupError:  # no live booking to re-check
+            continue
+        if not r.ok:
+            items.append(Drift("NEW_ETA", shipment, r.appointment_id, r, eta[11:16]))
+    return items
