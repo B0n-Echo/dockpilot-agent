@@ -48,7 +48,7 @@ During the day, `lifecycle.py` re-checks bookings when a dock breaks down or a t
 
 You need [uv](https://docs.astral.sh/uv/). Python 3.12 is picked up automatically. There are no other dependencies.
 
-**Run the tests** (160 checks, about 25 seconds, all offline):
+**Run the tests** (170 checks, about 25 seconds, all offline):
 
 ```bash
 uv run pytest
@@ -169,7 +169,7 @@ Also measured:
 | `src/dockpilot/` | The code: one file per building block (see "How it works") |
 | `src/dockpilot/static/` | The two web pages (plain HTML + JavaScript) |
 | `src/dockpilot/migrations/` | DockPilot's own tables, added to a working copy of the data |
-| `tests/` | 160 checks, offline, on the real dummy data |
+| `tests/` | 170 checks, offline, on the real dummy data |
 | `data/source/` | The dataset exactly as received, with checksums |
 | `docs/` | Problem definition, data audit, decision register, and the replay output |
 | `progress/` | An internal build-progress page (`uv run python progress/server.py`) |
@@ -192,3 +192,4 @@ Also measured:
 - [Data audit](docs/02_data_audit.md): every data issue, with the query that proves it.
 - [Decision register](docs/03_decision_register.md): the 13 design decisions, each with its answer, reason and evidence from the build.
 - [How it works](docs/04_how_it_works.md): one message end to end from real traces, who calls whom, what happens when things fail, and the guardrails.
+- [Bad data and edge cases](docs/05_bad_data_and_edge_cases.md): what DockPilot does when the data is wrong or something breaks, with the proof for each and the honest gaps.

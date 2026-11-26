@@ -2,7 +2,7 @@
   "title": "DockPilot finds late trucks a slot they can really use, holds it safely, and hands the rest to a person",
   "lede": "A progress note in plain words. DockPilot helps a warehouse when trucks run late: it works out which unloading slots still fit, offers the best ones, and makes sure two drivers can never be given the same slot. Built on the practice data from 4 August 2026.",
   "updated": "2026-11-26",
-  "checks_passing": 162,
+  "checks_passing": 170,
   "rules_checked": 15,
   "source_changes": 0,
   "journey": [
@@ -223,6 +223,14 @@
       "what": "A switch that records every step a message goes through, including exactly what the AI was asked and answered, or why it wasn't used. Shown in the chat, the terminal and LangSmith.",
       "where": "trace.py, docs/04_how_it_works.md",
       "commit": "6aabe96"
+    },
+    {
+      "id": "dp-21",
+      "name": "Ready for bad data",
+      "status": "done",
+      "what": "If a driver's booking record can't be true (too heavy for the dock, two trucks on one slot), DockPilot says so with the reason, offers to find a slot that fits, and tells a coordinator. It never edits the client's data.",
+      "where": "conversation.py, docs/05_bad_data_and_edge_cases.md",
+      "commit": ""
     }
   ],
   "choices": [

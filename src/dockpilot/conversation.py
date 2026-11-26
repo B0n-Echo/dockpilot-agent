@@ -8,12 +8,13 @@ from datetime import datetime, timedelta
 
 from dockpilot import trace
 from dockpilot.allocation import request_slot
-from dockpilot.auth import LIVE, choose_shipment, get_session
+from dockpilot.auth import IN_PROGRESS, LIVE, choose_shipment, get_session
 from dockpilot.bookings import convert_hold
 from dockpilot.clock import to_iso
 from dockpilot.escalations import SHORT, create_escalation, deliver, escalate_if_no_options
-from dockpilot.feasibility import latest_eta
+from dockpilot.feasibility import check_feasibility, latest_eta
 from dockpilot.holds import expire_holds, get_hold
+from dockpilot.lifecycle import _booked_slots
 from dockpilot.llm_reader import read_message_ai
 from dockpilot.reader import DELAY, _next_occurrence
 from dockpilot.settings import SETTINGS
@@ -33,6 +34,9 @@ BARE_TIME = re.compile(r"^\s*(?:around|about|approx\.?|maybe|by|at|reach(?:ing)?
 STATUS = {"SHIPMENT": "WAITING_FOR_DRIVER", "ETA": "WAITING_FOR_DRIVER", "CHOICE": "WAITING_FOR_DRIVER",
           "WAREHOUSE": "WAITING_FOR_WAREHOUSE", "NOTHING": "OPEN"}
 """Thread status for what the agent waits for."""
+
+FIXED = {"OVER_WEIGHT_LIMIT", "WRONG_DOCK_TYPE", "NEEDS_REEFER", "NEEDS_HEAVY_DOCK", "UNLOAD_TOO_LONG", "WRONG_FACILITY"}
+"""Slot-check reasons that never change with time: a booking failing one of these could never have worked (dp-21)."""
 
 GENERAL = "I can help with delays, arrival times and dock slots. When do you expect to arrive?"
 CLOSE_TEXT = ("I haven't heard back, so I've closed this chat. Your current booking is unchanged. "
@@ -160,7 +164,7 @@ def _offer(conn, shipment, thread, key, clock, settings, intro=""):
                            "I've passed this to the coordinator; they'll call you.",
                      state="NOTHING", escalation_id=esc.escalation_id)
     own = _own_booking(conn, shipment)
-    if own and search.options[0].slot_ids == own[1]:  # the best fit is the booking the truck already has (dp-19)
+    if own and search.options[0].slot_ids == own[1] and not _booking_problems(conn, own[0], clock):  # dp-19, dp-21
         o, eta = search.options[0], latest_eta(conn, shipment, clock)[0]
         fits = f"{intro}Good news: your booking {o.dock_code} {o.start:%H:%M}–{o.end:%H:%M} still works for {eta:%H:%M}."
         if own[2] != "PENDING_CONFIRMATION":
@@ -172,6 +176,36 @@ def _offer(conn, shipment, thread, key, clock, settings, intro=""):
     opts = [{"slots": o.slot_ids, "dock": o.dock_code, "start": to_iso(o.start), "end": to_iso(o.end)}
             for o in search.options if not own or o.slot_ids != own[1]]
     return _hold_and_list(conn, shipment, thread, opts, 0, key, clock, settings, intro)
+
+
+@trace.traced("is the booking record sound?", "decision", show_out=lambda p: " ".join(p) or "yes")
+def _booking_problems(conn, appointment_id, clock):
+    """dp-21: why a truck's own booking record can't be true (fixed slot rules fail, another truck on the same slot,
+    two current bookings), in plain words; [] when it's sound. Reads only."""
+    a = conn.execute("SELECT shipment_id FROM appointments WHERE appointment_id = ?", (appointment_id,)).fetchone()
+    if not a:
+        return []
+    slots, shipment = _booked_slots(conn, appointment_id), a[0]
+    problems = [r.message for r in check_feasibility(conn, shipment, slots, clock).reasons if r.code in FIXED]
+    problems += [f"Another truck ({r[0]}, booking {r[1]}) is booked on the same slot." for r in conn.execute(
+        f"SELECT DISTINCT shipment_id, appointment_id FROM appointments WHERE slot_id IN ({','.join('?' * len(slots))}) "
+        f"AND shipment_id <> ? AND appointment_status IN {LIVE}", (*slots, shipment))]
+    if conn.execute(f"SELECT COUNT(*) FROM appointments WHERE shipment_id = ? AND is_current = 1 "
+                    f"AND appointment_status IN {LIVE}", (shipment,)).fetchone()[0] > 1:
+        problems.append("The truck has two current bookings at once.")
+    return problems
+
+
+def _flag(conn, shipment, thread, summary, clock):
+    """dp-21: one CONTRADICTORY_DATA hand-off per truck (an open one is reused); the coordinator decides."""
+    esc = create_escalation(conn, "CONTRADICTORY_DATA", shipment, clock, thread_id=thread, summary=summary[:500])
+    return esc if esc.delivery_status == "DELIVERED" else deliver(conn, esc, clock)
+
+
+def _warning(problems):
+    """What the driver hears about a booking that can't be true."""
+    return (f", but it can't work as booked. {' '.join(problems)} I've asked a coordinator to check it. "
+            "Send me your arrival time and I'll find you a slot that fits.")
 
 
 def _own_booking(conn, shipment):
@@ -195,7 +229,13 @@ def _waiting(conn, shipment, thread, note, clock):
                      (note.get("appointment"),)).fetchone()
     if not a or a[0] != "PENDING_CONFIRMATION":
         _set_state(conn, thread, "NOTHING", {}, clock)
-        return _status(conn, shipment, clock, "NOTHING")
+        return _status(conn, shipment, clock, "NOTHING", thread)
+    problems = _booking_problems(conn, note.get("appointment"), clock)
+    if problems:
+        esc = _flag(conn, shipment, thread, f"Pending booking {note.get('appointment')} can't be true: {' '.join(problems)}",
+                    clock)
+        return Reply(True, f"I'm still waiting for the warehouse about {note.get('slot', 'your slot')}"
+                           f"{_warning(problems)}", state="WAREHOUSE", escalation_id=esc.escalation_id)
     on_it = "; a coordinator is on it" if note.get("escalated") else ""
     return Reply(True, f"I'm still checking {note.get('slot', 'your slot')} with the warehouse{on_it}. "
                        "I'll get back to you as soon as they answer.", state="WAREHOUSE")
@@ -254,16 +294,24 @@ def _ask_eta(conn, shipment, thread, r, clock):
 
 
 @trace.traced("booking status", "step")
-def _status(conn, shipment, clock, awaiting):
-    """The current booking and the latest arrival time, never shown as exact (D3)."""
+def _status(conn, shipment, clock, awaiting, thread=None):
+    """The current booking and the latest arrival time, never shown as exact (D3); a booking that can't be true is
+    reported with the reason and handed to a coordinator (dp-21)."""
     a = conn.execute(
-        f"""SELECT a.appointment_status, sl.slot_start_ts, d.dock_code FROM appointments a
+        f"""SELECT a.appointment_id, a.appointment_status, sl.slot_start_ts, d.dock_code FROM appointments a
             JOIN appointment_slots sl ON sl.slot_id = a.slot_id JOIN docks d ON d.dock_id = sl.dock_id
             WHERE a.shipment_id = ? AND a.appointment_status IN {LIVE}
             ORDER BY a.is_current, a.booked_at DESC LIMIT 1""", (shipment,)).fetchone()
     eta, source, _ = latest_eta(conn, shipment, clock)
     words = {"PENDING_CONFIRMATION": "waiting for the warehouse to confirm", "CONFIRMED": "confirmed",
              "IN_PROGRESS": "unloading now"}
+    problems = _booking_problems(conn, a["appointment_id"], clock) if a else []
+    if problems:
+        esc = _flag(conn, shipment, thread, f"Booking {a['appointment_id']} ({a['dock_code']} {_hm(a['slot_start_ts'])}) "
+                                            f"can't be true: {' '.join(problems)}", clock)
+        return Reply(True, f"Your booking: {a['dock_code']} at {_hm(a['slot_start_ts'])}, "
+                           f"{words[a['appointment_status']]}{_warning(problems)}", state=awaiting,
+                     escalation_id=esc.escalation_id)
     booking = (f"Your booking: {a['dock_code']} at {_hm(a['slot_start_ts'])}, {words[a['appointment_status']]}. "
                if a else "You have no booking right now. ")
     origin = "from you" if source == "DRIVER_DECLARED" else "from the plan"
@@ -281,7 +329,7 @@ def _fresh(conn, shipment, thread, text, r, key, clock, settings):
         eta, conf = now, "HIGH"
     if r.intent == "CHECK_STATUS":
         _set_state(conn, thread, "NOTHING", {}, clock)
-        return _status(conn, shipment, clock, "NOTHING")
+        return _status(conn, shipment, clock, "NOTHING", thread)
     if eta is not None and conf != "LOW":
         _save_eta(conn, shipment, eta, conf, r.delay_reason, text, clock)
         return _offer(conn, shipment, thread, key, clock, settings)
@@ -371,6 +419,10 @@ def _match_trip(trips, text, asked):
 def _pick_shipment(conn, s, thread, text, r, awaiting, note, key, clock, settings, reader):
     """Two trips and none chosen (D2): find it in the message, or ask which one; then handle the parked message."""
     pick = _match_trip(s.trips, text, awaiting == "SHIPMENT")
+    moving = [t for t in s.trips if t.status in IN_PROGRESS]
+    if len({t.vehicle_reg for t in moving}) > 1:  # dp-21, DA-11: one driver can't drive two trucks at once
+        _flag(conn, moving[0].shipment_id, thread, f"{s.driver_id} is on two moving trucks at once: "
+              + ", ".join(f"{t.shipment_id} {t.vehicle_reg}" for t in moving) + ".", clock)
     if pick is None:
         names = [f"{t.order_reference} ({_trip_label(t)})" for t in s.trips]
         keep = text if r.intent in BOOKING_INTENTS + ("CHECK_STATUS",) else note.get("parked") or text  # B1: latest
