@@ -3,7 +3,9 @@
     uv run python -m dockpilot.trace --last          # the last recorded turn as a tree
     uv run python -m dockpilot.trace --turn <id>     # a chosen turn
 
-Off by default; on with DOCKPILOT_TRACE=1 (.env or environment) or the web demo's --trace.
+Off by default. Recording is on with DOCKPILOT_TRACE=1 or LANGSMITH_TRACING=true (.env or environment), or the web
+demo's --trace. Sending to LangSmith needs LANGSMITH_TRACING=true and LANGSMITH_API_KEY (optional LANGSMITH_PROJECT,
+LANGSMITH_ENDPOINT for the EU region).
 """
 
 import argparse
@@ -41,11 +43,22 @@ def set_enabled(on=True):
 
 
 def enabled():
-    """Is tracing on? set_enabled wins; otherwise DOCKPILOT_TRACE=1 in the environment or .env."""
+    """Is recording on? set_enabled wins; otherwise DOCKPILOT_TRACE=1 or LANGSMITH_TRACING=true (environment or .env)."""
     if _forced is not None:
         return _forced
+    env = _env()
+    return env.get("DOCKPILOT_TRACE") == "1" or _flag(env.get("LANGSMITH_TRACING"))
+
+
+def _env():
+    """.env values with the real environment on top (keys are read here, never printed)."""
     from dockpilot.llm_reader import load_env  # here, not at the top: llm_reader imports this module
-    return os.environ.get("DOCKPILOT_TRACE", load_env().get("DOCKPILOT_TRACE")) == "1"
+    return {**load_env(), **{k: v for k, v in os.environ.items() if k.startswith(("LANGSMITH_", "DOCKPILOT_"))}}
+
+
+def _flag(value):
+    """True for true/1/yes (any case)."""
+    return str(value or "").strip().lower() in ("true", "1", "yes")
 
 
 @dataclass
@@ -169,13 +182,13 @@ def _save(conn, t):
 
 
 def _langsmith_settings():
-    """(api key, project) for LangSmith from the environment or .env; key None when not set."""
-    from dockpilot.llm_reader import load_env
-    env = {**load_env(), **{k: v for k, v in os.environ.items() if k.startswith("LANGSMITH_")}}
-    return env.get("LANGSMITH_API_KEY"), env.get("LANGSMITH_PROJECT", "dockpilot")
+    """(api key, project, endpoint) when LANGSMITH_TRACING is true and a key is set; otherwise key is None."""
+    env = _env()
+    key = env.get("LANGSMITH_API_KEY") if _flag(env.get("LANGSMITH_TRACING")) else None
+    return key, env.get("LANGSMITH_PROJECT") or "dockpilot", env.get("LANGSMITH_ENDPOINT") or None
 
 
-def _post(t, key, project):
+def _post(t, key, project, endpoint=None):
     """Send one finished turn to LangSmith as a run tree (the AI step as an LLM run). Never raises."""
     try:
         from datetime import timedelta
@@ -186,7 +199,7 @@ def _post(t, key, project):
         end = lambda s: s.started + timedelta(milliseconds=s.ms)
         root_span = next(s for s in t.spans if s.kind == "turn")
         root = RunTree(name=f"{t.name}: {t.label}"[:120], run_type="chain", inputs={"message": root_span.inp},
-                       start_time=root_span.started, project_name=project, ls_client=Client(api_key=key),
+                       start_time=root_span.started, project_name=project, ls_client=Client(api_url=endpoint, api_key=key),
                        extra={"metadata": {"turn_id": t.turn_id, "thread_id": t.thread_id}})
         runs = {root_span.span_id: root}
         for s in sorted(t.spans, key=lambda s: s.started):
@@ -204,10 +217,10 @@ def _post(t, key, project):
 
 
 def _send_to_langsmith(t):
-    """With a LANGSMITH_API_KEY, send the turn in the background so the driver's reply is not delayed."""
-    key, project = _langsmith_settings()
+    """With LANGSMITH_TRACING=true and a key, send the turn in the background so the driver's reply is not delayed."""
+    key, project, endpoint = _langsmith_settings()
     if key:
-        threading.Thread(target=_post, args=(t, key, project), daemon=True).start()
+        threading.Thread(target=_post, args=(t, key, project, endpoint), daemon=True).start()
 
 
 def show(conn, turn_id):

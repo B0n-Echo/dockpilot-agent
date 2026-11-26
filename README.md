@@ -108,7 +108,7 @@ Chat as usual, then press **What happened?** in the chat header. Each message sh
 uv run python -m dockpilot.trace --last
 ```
 
-With `LANGSMITH_API_KEY` (and optionally `LANGSMITH_PROJECT`) in `.env`, the same trees also go to LangSmith. The walkthrough built from real traces is [docs/04_how_it_works.md](docs/04_how_it_works.md).
+With `LANGSMITH_TRACING=true` and `LANGSMITH_API_KEY` in `.env` (optionally `LANGSMITH_PROJECT`, and `LANGSMITH_ENDPOINT` for the EU region), the same trees also go to LangSmith. Set `LANGSMITH_TRACING=false` to keep the key but send nothing. The walkthrough built from real traces is [docs/04_how_it_works.md](docs/04_how_it_works.md).
 
 **Reset the working database** (the original data in `data/source/` is never written to):
 

@@ -2,7 +2,7 @@
   "title": "DockPilot finds late trucks a slot they can really use, holds it safely, and hands the rest to a person",
   "lede": "A progress note in plain words. DockPilot helps a warehouse when trucks run late: it works out which unloading slots still fit, offers the best ones, and makes sure two drivers can never be given the same slot. Built on the practice data from 4 August 2026.",
   "updated": "2026-11-26",
-  "checks_passing": 160,
+  "checks_passing": 162,
   "rules_checked": 15,
   "source_changes": 0,
   "journey": [
@@ -222,7 +222,7 @@
       "status": "done",
       "what": "A switch that records every step a message goes through, including exactly what the AI was asked and answered, or why it wasn't used. Shown in the chat, the terminal and LangSmith.",
       "where": "trace.py, docs/04_how_it_works.md",
-      "commit": ""
+      "commit": "6aabe96"
     }
   ],
   "choices": [

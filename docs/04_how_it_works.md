@@ -14,7 +14,15 @@ Chat as Kailash, then press **What happened?** in the chat header. Or, in a seco
 uv run python -m dockpilot.trace --last
 ```
 
-With `LANGSMITH_API_KEY` in `.env`, every turn also appears in LangSmith (project `dockpilot`).
+**Three settings decide what's traced:**
+
+| Setting | Effect |
+|---|---|
+| `DOCKPILOT_TRACE=1` (or `--trace`) | Record every step locally (the panel, the terminal) |
+| `LANGSMITH_TRACING=true` | Record, **and** send each turn to LangSmith (project `LANGSMITH_PROJECT`, default `dockpilot`) |
+| `LANGSMITH_API_KEY` | Needed to send. Kept but unused while `LANGSMITH_TRACING=false` |
+
+Tests always run with tracing off and LangSmith unreachable, whatever `.env` says (`tests/conftest.py`).
 
 ---
 

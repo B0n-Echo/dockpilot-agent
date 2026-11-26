@@ -20,7 +20,7 @@ from dockpilot.webapp import App, make_server
 @pytest.fixture
 def conn(tmp_path, monkeypatch):
     """A fresh working copy, tracing on, and LangSmith switched off (no key)."""
-    monkeypatch.setattr(trace, "_langsmith_settings", lambda: (None, "dockpilot"))
+    monkeypatch.setattr(trace, "_langsmith_settings", lambda: (None, "dockpilot", None))
     trace.set_enabled(True)
     c = db.connect(db.init_work_db(tmp_path / "work.db"))
     yield c
@@ -107,14 +107,14 @@ def test_phone_numbers_are_masked_and_keys_never_recorded(conn):
 def test_langsmith_only_with_a_key(conn, monkeypatch):
     """No key: nothing is sent. With a key: the finished turn, AI step included, goes to LangSmith."""
     sent = []
-    monkeypatch.setattr(trace, "_post", lambda t, key, project: sent.append((t, key, project)))
+    monkeypatch.setattr(trace, "_post", lambda t, key, project, endpoint: sent.append((t, key, project)))
     monkeypatch.setattr(trace.threading, "Thread", lambda target, args, daemon: type(
         "T", (), {"start": lambda self: target(*args)})())
     clock = FakeClock(datetime(2026, 8, 4, 9, 19, tzinfo=IST))
     sid = _login(conn, clock)
     handle_message(conn, sid, "I am late by one hour.", clock, reader=read_message)
     assert sent == []
-    monkeypatch.setattr(trace, "_langsmith_settings", lambda: ("test-key", "dockpilot"))
+    monkeypatch.setattr(trace, "_langsmith_settings", lambda: ("test-key", "dockpilot", None))
     clock.advance(minutes=1)
     handle_message(conn, sid, "around 11:15", clock, reader=read_message)
     assert len(sent) == 1 and sent[0][2] == "dockpilot"
@@ -153,3 +153,25 @@ def test_quiet_timer_tick_is_not_saved(conn, tmp_path):
     """A timer tick where nothing happened leaves no trace (the timer runs every 5 seconds)."""
     App(tmp_path / "work.db", FakeClock(datetime(2026, 8, 4, 9, 19, tzinfo=IST))).tick()
     assert conn.execute("SELECT COUNT(*) FROM trace_turns WHERE name = 'timer tick'").fetchone()[0] == 0
+
+
+def test_langsmith_needs_the_tracing_flag_as_well_as_the_key(monkeypatch):
+    """LANGSMITH_TRACING decides: a key alone sends nothing; true + key sends; the EU endpoint is passed on."""
+    monkeypatch.undo()  # the real settings function, not conftest's offline stand-in
+    monkeypatch.setattr(trace, "_env", lambda: {"LANGSMITH_API_KEY": "k"})
+    assert trace._langsmith_settings()[0] is None
+    monkeypatch.setattr(trace, "_env", lambda: {"LANGSMITH_API_KEY": "k", "LANGSMITH_TRACING": "false"})
+    assert trace._langsmith_settings()[0] is None
+    monkeypatch.setattr(trace, "_env", lambda: {"LANGSMITH_API_KEY": "k", "LANGSMITH_TRACING": "True",
+                                                "LANGSMITH_ENDPOINT": "https://eu.api.smith.langchain.com"})
+    assert trace._langsmith_settings() == ("k", "dockpilot", "https://eu.api.smith.langchain.com")
+
+
+def test_langsmith_tracing_flag_also_turns_recording_on(monkeypatch):
+    """LANGSMITH_TRACING=true records locally too, so there is something to send; neither flag means off."""
+    trace.set_enabled(None)
+    monkeypatch.setattr(trace, "_env", lambda: {"LANGSMITH_TRACING": "true"})  # recording only; sending is stubbed
+    assert trace.enabled()
+    monkeypatch.setattr(trace, "_env", lambda: {})
+    assert not trace.enabled()
+    trace.set_enabled(False)
