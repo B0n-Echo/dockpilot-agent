@@ -8,6 +8,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
+from dockpilot import trace
 from dockpilot.clock import to_iso
 from dockpilot.db import write_transaction
 from dockpilot.settings import SETTINGS
@@ -146,6 +147,8 @@ def verify_code(conn, phone, code, clock, settings=SETTINGS):
     return LoginResult(True, session=get_session(conn, sid, clock))
 
 
+@trace.traced("login check", show_out=lambda s: f"ok · {s.driver_id} · {len(s.trips)} trip(s) · chosen {s.shipment_id or 'none yet'}"
+              if s else "no valid session → refuse")
 def get_session(conn, session_id, clock):
     """Gatekeeper on every message: the session if valid, not expired and the driver still has a trip; else None."""
     row = conn.execute(

@@ -8,6 +8,7 @@ exactly one place that decides what "feasible" means. Read only: nothing is held
 from dataclasses import dataclass
 from datetime import datetime
 
+from dockpilot import trace
 from dockpilot.clock import to_iso
 from dockpilot.feasibility import check_feasibility
 from dockpilot.settings import SETTINGS
@@ -52,6 +53,9 @@ def _minutes(run):
     return int((end - start).total_seconds() // 60)
 
 
+@trace.traced("slot search", show_in=lambda conn, shipment_id, *a, **k: shipment_id,
+              show_out=lambda r: f"{len(r.checked)} candidates checked · {len(r.options)} fit"
+              + (f" · best {r.options[0].dock_code} {r.options[0].start:%H:%M}" if r.options else ""))
 def find_options(conn, shipment_id, clock, settings=SETTINGS):
     """Find the best slots a shipment can use from now on.
 

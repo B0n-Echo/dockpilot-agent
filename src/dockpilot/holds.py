@@ -12,6 +12,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
+from dockpilot import trace
 from dockpilot.clock import to_iso
 from dockpilot.db import write_transaction
 from dockpilot.feasibility import Reason, check_feasibility
@@ -126,6 +127,7 @@ def _expire(conn, clock):
     return len(rows)
 
 
+@trace.traced("expire holds", "timer", show_out=lambda n: f"{n} hold row(s) expired" if n else "")
 def expire_holds(conn, clock):
     """Expire every hold whose time is up, and write a HOLD_EXPIRED event for each.
 
@@ -144,6 +146,9 @@ def expire_holds(conn, clock):
         return _expire(conn, clock)
 
 
+@trace.traced("hold the slot", "db", show_in=lambda conn, shipment_id, slot_ids, *a, **k: f"{shipment_id} {','.join(slot_ids)}",
+              show_out=lambda r: (f"held until {r.hold.expires_at:%H:%M}" + (" (same request again)" if r.replayed else ""))
+              if r.placed else f"refused: {r.reasons[0].code if r.reasons else '?'}")
 def place_hold(conn, shipment_id, slot_ids, request_key, clock, settings=SETTINGS, spike=False, thread_id=None):
     """Hold one slot, or back-to-back slots, for a shipment, safely.
 

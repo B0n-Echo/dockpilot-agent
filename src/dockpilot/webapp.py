@@ -16,7 +16,7 @@ from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from dockpilot import db, paths
+from dockpilot import db, paths, trace
 from dockpilot.allocation import settle_requests
 from dockpilot.auth import end_session, get_session, request_code, verify_code
 from dockpilot.bookings import PENDING, check_warehouse_timeouts, confirm_booking, reject_booking
@@ -50,13 +50,18 @@ class App:
         """Timer work: expire holds, settle rush-hour slot rivals, chase the warehouse, nudge or close silent chats."""
         conn = db.connect(self.db_path)
         try:
-            expire_holds(conn, self.clock)
-            notify_allocation(conn, settle_requests(conn, self.clock, self.settings), self.clock, self.settings)
-            notify_warehouse_timeout(conn, check_warehouse_timeouts(conn, self.clock, self.settings, out=self.log),
-                                     self.clock)
-            check_silent_drivers(conn, self.clock, self.settings, out=self.log)
+            with trace.turn(conn, "timer tick", quiet=True):
+                self._tick(conn)
         finally:
             conn.close()
+
+    def _tick(self, conn):
+        """The timer's jobs, in order."""
+        expire_holds(conn, self.clock)
+        notify_allocation(conn, settle_requests(conn, self.clock, self.settings), self.clock, self.settings)
+        notify_warehouse_timeout(conn, check_warehouse_timeouts(conn, self.clock, self.settings, out=self.log),
+                                 self.clock)
+        check_silent_drivers(conn, self.clock, self.settings, out=self.log)
 
 
 def _trips(session):
@@ -137,15 +142,32 @@ def warehouse_get(app, conn, body, sid):
 def warehouse_confirm(app, conn, body, sid):
     """Warehouse says yes (dp-08), then the driver is told (dp-14)."""
     appt = str(body.get("appointment_id", ""))
-    confirm_booking(conn, appt, app.clock, ref=f"WH-{secrets.randbelow(10**4):04d}")
-    return 200, {"told_driver": notify_booking_result(conn, appt, app.clock, app.settings).ok}
+    with trace.turn(conn, "warehouse confirms", appt):
+        confirm_booking(conn, appt, app.clock, ref=f"WH-{secrets.randbelow(10**4):04d}")
+        return 200, {"told_driver": notify_booking_result(conn, appt, app.clock, app.settings).ok}
 
 
 def warehouse_reject(app, conn, body, sid):
     """Warehouse says no with a reason, then the driver gets the reason and fresh options."""
     appt, reason = str(body.get("appointment_id", "")), str(body.get("reason", "")).strip()[:200]
-    reject_booking(conn, appt, app.clock, reason or "No reason given")
-    return 200, {"told_driver": notify_booking_result(conn, appt, app.clock, app.settings).ok}
+    with trace.turn(conn, "warehouse rejects", appt):
+        reject_booking(conn, appt, app.clock, reason or "No reason given")
+        return 200, {"told_driver": notify_booking_result(conn, appt, app.clock, app.settings).ok}
+
+
+def trace_get(app, conn, body, sid):
+    """The logged-in driver's own recent traced turns (dp-20), newest first, as text trees."""
+    s = get_session(conn, sid, app.clock)
+    if s is None:
+        return 401, {"error": "Please log in again."}
+    if not trace.enabled():
+        return 200, {"enabled": False, "turns": []}
+    rows = conn.execute(
+        "SELECT turn_id, name, label FROM trace_turns WHERE thread_id IN "
+        "(SELECT thread_id FROM chat_threads WHERE driver_id = ?) ORDER BY started_at DESC, rowid DESC LIMIT 8",
+        (s.driver_id,)).fetchall()
+    return 200, {"enabled": True, "turns": [{"turn_id": r[0], "name": r[1], "label": r[2], "tree": trace.show(conn, r[0])}
+                                            for r in rows]}
 
 
 def clock_advance(app, conn, body, sid):
@@ -163,6 +185,7 @@ ROUTES = {
     ("POST", "/api/chat"): chat_post, ("GET", "/api/chat"): chat_get, ("POST", "/api/logout"): logout,
     ("GET", "/api/warehouse"): warehouse_get, ("POST", "/api/warehouse/confirm"): warehouse_confirm,
     ("POST", "/api/warehouse/reject"): warehouse_reject, ("POST", "/api/clock/advance"): clock_advance,
+    ("GET", "/api/trace"): trace_get,
 }
 """API routes: (method, path) -> handler(app, conn, body, session id) -> (status, json[, headers])."""
 
@@ -248,12 +271,12 @@ def _timer(app, seconds=5):
 
 
 def _has_latest_tables(path):
-    """True if the working database exists and already has every migration (dp-10's table is the newest)."""
+    """True if the working database exists and already has every migration (dp-20's table is the newest)."""
     if not Path(path).exists():
         return False
     conn = db.connect(path)
     try:
-        return conn.execute("SELECT 1 FROM sqlite_master WHERE name = 'slot_requests'").fetchone() is not None
+        return conn.execute("SELECT 1 FROM sqlite_master WHERE name = 'trace_spans'").fetchone() is not None
     finally:
         conn.close()
 
@@ -263,7 +286,10 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description="DockPilot web chat demo.")
     parser.add_argument("--port", type=int, default=8001)
     parser.add_argument("--reset", action="store_true")
+    parser.add_argument("--trace", action="store_true", help="record every step (see 'What happened?' in the chat)")
     args = parser.parse_args(argv)
+    if args.trace:
+        trace.set_enabled(True)
     if args.reset or not _has_latest_tables(paths.WORK_DB):
         db.init_work_db()
     app = App()

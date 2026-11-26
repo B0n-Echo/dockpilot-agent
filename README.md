@@ -48,7 +48,7 @@ During the day, `lifecycle.py` re-checks bookings when a dock breaks down or a t
 
 You need [uv](https://docs.astral.sh/uv/). Python 3.12 is picked up automatically. There are no other dependencies.
 
-**Run the tests** (153 checks, about 25 seconds, all offline):
+**Run the tests** (160 checks, about 25 seconds, all offline):
 
 ```bash
 uv run pytest
@@ -95,6 +95,20 @@ uv run python -m dockpilot.scenarios
 ```bash
 uv run python -m dockpilot.llm_reader "Stuck in traffic near Shahpura, should make it by half past eleven"
 ```
+
+**See every step a message goes through (trace mode):**
+
+```bash
+uv run python -m dockpilot.webapp --reset --trace
+```
+
+Chat as usual, then press **What happened?** in the chat header. Each message shows as a tree: login check, reading (★ the AI call, with exactly what was sent and what came back, or why it fell back to the rules), slot search, hold, booking, reply, with milliseconds per step. In a terminal:
+
+```bash
+uv run python -m dockpilot.trace --last
+```
+
+With `LANGSMITH_API_KEY` (and optionally `LANGSMITH_PROJECT`) in `.env`, the same trees also go to LangSmith. The walkthrough built from real traces is [docs/04_how_it_works.md](docs/04_how_it_works.md).
 
 **Reset the working database** (the original data in `data/source/` is never written to):
 
@@ -155,7 +169,7 @@ Also measured:
 | `src/dockpilot/` | The code: one file per building block (see "How it works") |
 | `src/dockpilot/static/` | The two web pages (plain HTML + JavaScript) |
 | `src/dockpilot/migrations/` | DockPilot's own tables, added to a working copy of the data |
-| `tests/` | 153 checks, offline, on the real dummy data |
+| `tests/` | 160 checks, offline, on the real dummy data |
 | `data/source/` | The dataset exactly as received, with checksums |
 | `docs/` | Problem definition, data audit, decision register, and the replay output |
 | `progress/` | An internal build-progress page (`uv run python progress/server.py`) |
@@ -177,3 +191,4 @@ Also measured:
 - [Problem definition](docs/01_problem_definition_sheet.md): the problem, the measures (M1–M9) and the boundaries.
 - [Data audit](docs/02_data_audit.md): every data issue, with the query that proves it.
 - [Decision register](docs/03_decision_register.md): the 13 design decisions, each with its answer, reason and evidence from the build.
+- [How it works](docs/04_how_it_works.md): one message end to end from real traces, who calls whom, what happens when things fail, and the guardrails.

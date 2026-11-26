@@ -5,6 +5,7 @@ import sys
 import uuid
 from dataclasses import dataclass
 
+from dockpilot import trace
 from dockpilot.clock import to_iso
 from dockpilot.db import write_transaction
 from dockpilot.feasibility import latest_eta
@@ -69,6 +70,9 @@ def _constraints(conn, shipment_id, now):
             f"Driver reported: {row['description']}")
 
 
+@trace.traced("coordinator hand-off", "decision",
+              show_in=lambda conn, reason_code, shipment_id, *a, **k: f"{reason_code} {shipment_id}",
+              show_out=lambda e: f"{e.escalation_id} ({e.reason_code})")
 def create_escalation(conn, reason_code, shipment_id, clock, options_checked=(), summary=None,
                       thread_id=None, driver_constraints=None, appointment_id=None):
     """Open an escalation with every M3 field filled from the database; return it.

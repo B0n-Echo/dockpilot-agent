@@ -12,7 +12,7 @@ from dataclasses import replace
 from datetime import timedelta
 from functools import partial
 
-from dockpilot import paths
+from dockpilot import paths, trace
 from dockpilot.clock import SystemClock
 from dockpilot.reader import INTENTS, REASONS, Reading, read_message
 
@@ -96,18 +96,30 @@ def read_message_ai(text, received_at, call=None):
     a relative delay and no clock time ("late by one hour"); otherwise the AI's reading stands.
     """
     rules = read_message(text, received_at)
+    model = "test stand-in"
     if call is None:
         env = load_env()
         key, model = env.get("OPENROUTER_API_KEY"), env.get("OPENROUTER_MODEL")
         if not (key and model):
+            trace.note("rules used: no AI key or model in .env")
             return rules
         call = partial(_call_openrouter, key, model)
+    messages = [{"role": "system", "content": INSTRUCTION},
+                {"role": "user", "content": f"Sent at {received_at:%H:%M}: {text}"}]
     try:
-        raw = call([{"role": "system", "content": INSTRUCTION},
-                    {"role": "user", "content": f"Sent at {received_at:%H:%M}: {text}"}])
+        with trace.span(f"AI model call ({model})", "ai", f"[system] {INSTRUCTION}\n[user] {messages[1]['content']}") as ai:
+            raw = call(messages)
+            ai.out = raw
         raw = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw.strip())
         reading = _validate(json.loads(raw), received_at)
-    except (OSError, ValueError, KeyError, TypeError, IndexError):
+    except TimeoutError:
+        trace.note("rules used: AI timed out")
+        return rules
+    except OSError as exc:
+        trace.note(f"rules used: AI unreachable ({type(exc).__name__})")
+        return rules
+    except (ValueError, KeyError, TypeError, IndexError) as exc:
+        trace.note(f"rules used: AI answer invalid ({exc})"[:160])
         return rules
     caution = rules.needs_clarification and rules.delay_minutes is not None and rules.eta is None
     return replace(reading, needs_clarification=reading.needs_clarification or caution)

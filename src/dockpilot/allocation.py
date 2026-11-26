@@ -6,6 +6,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
+from dockpilot import trace
 from dockpilot.clock import to_iso
 from dockpilot.escalations import create_escalation, deliver
 from dockpilot.feasibility import LIVE_APPOINTMENT, check_feasibility, latest_eta
@@ -76,6 +77,11 @@ def _decide(conn, request_id, status, clock, hold=None, reason=None, escalation_
                                           request_id))
 
 
+@trace.traced("who gets it (D7)", "decision",
+              show_in=lambda conn, shipment_id, slot_ids, *a, **k: f"{shipment_id} {','.join(slot_ids)}",
+              show_out=lambda r: {"HELD": "normal day: first come, first served → held",
+                                  "WAITING": "rush (spike): wait 30 s for rivals"}.get(r.status, r.status)
+              + (" + CRITICAL alert" if r.alert else ""))
 def request_slot(conn, shipment_id, slot_ids, request_key, clock, settings=SETTINGS, thread_id=None):
     """The agent's one door to a slot: hold now on a normal day (first wins), or wait for rivals in a spike.
     A CRITICAL load that gets a hold is checked by critical_alert. The same request_key gives the same answer."""
@@ -99,6 +105,8 @@ def request_slot(conn, shipment_id, slot_ids, request_key, clock, settings=SETTI
     return RequestResult("HELD", res.hold, (), rid, alert and alert.escalation_id)
 
 
+@trace.traced("settle rush-hour rivals", "timer",
+              show_out=lambda ds: ", ".join(f"{d.shipment_id} {d.status}" for d in ds))
 def settle_requests(conn, clock, settings=SETTINGS):
     """Close every collection window that is 30 s old: R0 feasible only, R3 rank (priority, harm, first asked),
     R4 near-tie -> first asked keeps it plus a NEAR_TIE escalation. Returns one Decision per waiting request."""

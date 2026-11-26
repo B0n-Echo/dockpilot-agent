@@ -6,6 +6,7 @@ import uuid
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 
+from dockpilot import trace
 from dockpilot.allocation import request_slot
 from dockpilot.auth import LIVE, choose_shipment, get_session
 from dockpilot.bookings import convert_hold
@@ -74,6 +75,7 @@ def _post(conn, thread, sender, ref, text, clock, reading=None, external=None, i
     return mid
 
 
+@trace.traced("same message again?", "decision", show_out=lambda r: "yes → send the earlier reply" if r else "no")
 def _resend(conn, thread, text, clock):
     """B2 (dp-16, DA-12): the same report (4+ words) again within 2 minutes, already answered and nothing since:
     the earlier reply, or None. Short replies like "1" are not treated as resends."""
@@ -106,6 +108,7 @@ def _set_state(conn, thread, awaiting, note, clock):
 
 def _finish(conn, thread, reply, clock, external=None, status=None):
     """Save the agent's reply and set the thread status."""
+    trace.tag(thread)
     _post(conn, thread, "AGENT", "dockpilot", reply.text, clock, external=external, intent=reply.state)
     status = status or ("ESCALATED" if reply.escalation_id else STATUS[reply.state])
     conn.execute("UPDATE chat_threads SET thread_status = ? WHERE thread_id = ?", (status, thread))
@@ -146,6 +149,7 @@ def _why_not(checked):
     return ", ".join(SHORT.get(c, c) for c, _ in sorted(counts.items(), key=lambda kv: -kv[1])[:3]) or "no slots left today"
 
 
+@trace.traced("offer options", "decision", show_out=lambda r: r.state)
 def _offer(conn, shipment, thread, key, clock, settings, intro=""):
     """Find options: hold the best and list up to 3, or escalate and tell the driver why nothing fits (D11)."""
     search, esc = escalate_if_no_options(conn, shipment, clock, settings, thread_id=thread)
@@ -184,6 +188,7 @@ def _own_booking(conn, shipment):
     return a["appointment_id"], ordered, a["appointment_status"]
 
 
+@trace.traced("still waiting for the warehouse", "decision", show_out=lambda r: r.state)
 def _waiting(conn, shipment, thread, note, clock):
     """Any message while the warehouse decides: "I'm still checking …" (dp-19); the status if they already answered."""
     a = conn.execute("SELECT appointment_status FROM appointments WHERE appointment_id = ?",
@@ -235,6 +240,7 @@ def _held_reply(conn, thread, opts, j, hold, clock, intro="", extra=""):
                  state="CHOICE", options=tuple(opts), hold_group=hold.group_id)
 
 
+@trace.traced("ask for the arrival time (R7)", "decision", show_out=lambda r: "asked, nothing held")
 def _ask_eta(conn, shipment, thread, r, clock):
     """One clarifying question for a vague arrival (R7, DA-03); no hold yet."""
     now, plan = clock.now(), _plan(conn, shipment)
@@ -247,6 +253,7 @@ def _ask_eta(conn, shipment, thread, r, clock):
     return Reply(True, f"{ask}Reply with your arrival time, like {example}.", state="ETA")
 
 
+@trace.traced("booking status", "step")
 def _status(conn, shipment, clock, awaiting):
     """The current booking and the latest arrival time, never shown as exact (D3)."""
     a = conn.execute(
@@ -263,6 +270,7 @@ def _status(conn, shipment, clock, awaiting):
     return Reply(True, f"{booking}The arrival time we have for you is about {eta:%H:%M} ({origin}).", state=awaiting)
 
 
+@trace.traced("act on the message", "decision", show_out=lambda r: r.state)
 def _fresh(conn, shipment, thread, text, r, key, clock, settings):
     """A message with nothing pending: act on its intent."""
     now = clock.now()
@@ -285,6 +293,7 @@ def _fresh(conn, shipment, thread, text, r, key, clock, settings):
     return Reply(True, GENERAL, state="NOTHING")
 
 
+@trace.traced("answer to the time question", "decision", show_out=lambda r: r.state)
 def _answer_eta(conn, shipment, thread, text, r, note, key, clock, settings):
     """Answer to "what time?": a time, "yes" to our guess, or still vague -> best guess as LOW (R7)."""
     now = clock.now()
@@ -300,6 +309,7 @@ def _answer_eta(conn, shipment, thread, text, r, note, key, clock, settings):
     return _offer(conn, shipment, thread, key, clock, settings)
 
 
+@trace.traced("answer to the options", "decision", show_out=lambda r: r.state)
 def _answer_choice(conn, shipment, thread, text, r, note, key, clock, settings):
     """Answer to the options: 1/yes books the held slot, 2/3 holds another, no lets the hold run out."""
     opts, held = note["options"], note["held"]
@@ -334,6 +344,7 @@ def _trip_label(t):
             "IN_TRANSIT": f"on the road, due {_hm(t.planned_eta)}"}.get(t.status, f"due {_hm(t.planned_eta)}")
 
 
+@trace.traced("which trip?", "decision", show_out=lambda r: r or "not named")
 def _match_trip(trips, text, asked):
     """Which trip the message names: shipment id, order number or its last digits, vehicle, "in the yard" (the one
     trip at the warehouse), or first/second."""
@@ -371,10 +382,11 @@ def _pick_shipment(conn, s, thread, text, r, awaiting, note, key, clock, setting
     _set_state(conn, thread, "NOTHING", {}, clock)
     parked = note.get("parked") if awaiting == "SHIPMENT" else None
     if parked and not r.eta:
-        text, r = parked, reader(parked, clock.now())
+        text, r = parked, _read(reader, parked, clock)
     return _fresh(conn, pick, thread, text, r, key, clock, settings)
 
 
+@trace.traced("safety words → coordinator", "decision")
 def _safety(conn, s, thread, text, clock):
     """Safety words: a SAFETY escalation now."""
     esc = create_escalation(conn, "SAFETY", s.shipment_id or s.trips[0].shipment_id, clock, thread_id=thread,
@@ -404,9 +416,27 @@ def _new_thread(conn, s, r, clock):
     return thread
 
 
+def _read(reader, text, clock):
+    """Read a message (AI or rules) as one traced step; the AI step and any fallback reason are recorded inside."""
+    with trace.span("read the message", "step", text) as sp:
+        r = reader(text, clock.now())
+        sp.out = (f"{r.read_by}: {r.intent}" + (f", ETA {r.eta:%H:%M} {r.eta_confidence}" if r.eta else
+                  f", no clock time ({r.eta_confidence or '-'})") + (", ask first" if r.needs_clarification else ""))
+        return r
+
+
 def handle_message(conn, session_id, text, clock, settings=SETTINGS, reader=read_message_ai, message_ref=None):
     """One driver turn: check login, save, read, decide what to ask or do, save the reply. A resent message_ref
-    gets the same reply again."""
+    gets the same reply again. With tracing on, the whole turn is recorded (dp-20)."""
+    with trace.turn(conn, "driver message", text) as root:
+        reply = _handle_message(conn, session_id, text, clock, settings, reader, message_ref)
+        if root:
+            root.out = f"[{reply.state}] {reply.text}"
+        return reply
+
+
+def _handle_message(conn, session_id, text, clock, settings, reader, message_ref):
+    """The body of handle_message."""
     s = get_session(conn, session_id, clock)
     if s is None:
         return Reply(False, "Please log in again.")
@@ -419,7 +449,7 @@ def handle_message(conn, session_id, text, clock, settings=SETTINGS, reader=read
                            (thread, f"re:{message_ref}")).fetchone()
         if old:
             return Reply(True, old["message_text"], thread, _state(conn, thread)[0])
-    r = reader(text, clock.now())
+    r = _read(reader, text, clock)
     thread = thread or _new_thread(conn, s, r, clock)
     key = f"{thread}:{_post(conn, thread, 'DRIVER', s.driver_id, text, clock, r, message_ref)}"
     awaiting, note = _state(conn, thread)
@@ -440,6 +470,7 @@ def handle_message(conn, session_id, text, clock, settings=SETTINGS, reader=read
     return _finish(conn, thread, reply, clock, external=f"re:{message_ref}" if message_ref else None)
 
 
+@trace.traced("tell the driver the warehouse's answer", "step", show_out=lambda r: r.text if r.ok else "")
 def notify_booking_result(conn, appointment_id, clock, settings=SETTINGS):
     """Tell the driver the warehouse's answer in their chat; after a rejection, show fresh options (R5)."""
     a = conn.execute(
@@ -461,6 +492,7 @@ def notify_booking_result(conn, appointment_id, clock, settings=SETTINGS):
     return Reply(False, "The warehouse hasn't answered yet.", thread)
 
 
+@trace.traced("silent drivers (nudge / close)", "timer", show_out=lambda d: ", ".join(x["action"] for x in d))
 def check_silent_drivers(conn, clock, settings=SETTINGS, out=None):
     """No reply to the time or options question: nudge once after 5 min, close the chat 5 min later.
     Closing while waiting for the arrival time also opens an ETA_UNRESOLVED escalation. Returns what it did."""
@@ -501,6 +533,7 @@ def check_silent_drivers(conn, clock, settings=SETTINGS, out=None):
     return done
 
 
+@trace.traced("tell rush-hour drivers who won", "timer", show_out=lambda out: f"{len(out)} driver(s) told" if out else "")
 def notify_allocation(conn, decisions, clock, settings=SETTINGS):
     """Tell each driver how a collection window ended (dp-10): the winner gets the held slot, a loser the reason and
     fresh options (R5). Returns the replies posted."""
@@ -520,6 +553,7 @@ def notify_allocation(conn, decisions, clock, settings=SETTINGS):
     return out
 
 
+@trace.traced("tell drivers: warehouse too slow", "timer", show_out=lambda out: f"{len(out)} driver(s) told" if out else "")
 def notify_warehouse_timeout(conn, escalations, clock):
     """The warehouse didn't answer in time (dp-08 escalated it): tell the waiting driver once (dp-19)."""
     out = []

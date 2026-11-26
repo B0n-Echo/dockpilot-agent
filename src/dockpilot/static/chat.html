@@ -36,12 +36,21 @@
   form.send input { border-radius: 20px; }
   form.send button { border-radius: 20px; padding: 0 16px; }
   [hidden] { display: none !important; }
+  .phone { position: relative; }
+  #trace-panel { position: absolute; inset: 52px 0 0 0; background: #111827; color: #e5e7eb; overflow-y: auto;
+                 padding: 12px; z-index: 5; }
+  #trace-panel h3 { margin: 0 0 8px; font-size: 14px; display: flex; justify-content: space-between; }
+  #trace-panel .turn { margin-bottom: 14px; }
+  #trace-panel .label { color: #93c5fd; font-size: 12px; }
+  #trace-panel pre { margin: 4px 0 0; font: 11px/1.45 ui-monospace, Menlo, monospace; white-space: pre-wrap; }
+  #trace-panel .ai { color: #fbbf24; }
 </style>
 </head>
 <body>
 <div class="phone">
   <header>
     <div class="title"><div class="name" id="who">DockPilot</div><div class="sub" id="sub">Driver chat</div></div>
+    <button id="trace-btn" hidden title="See every step the last messages went through">What happened?</button>
     <button id="logout" hidden>Logout</button>
   </header>
 
@@ -75,6 +84,10 @@
       <input id="text" placeholder="Type a message" autocomplete="off" maxlength="1000">
       <button class="btn">Send</button>
     </form>
+  </section>
+  <section id="trace-panel" hidden>
+    <h3><span>What happened? (newest first)</span><button id="trace-close">Close</button></h3>
+    <div id="trace-list"></div>
   </section>
 </div>
 
@@ -116,8 +129,33 @@ async function refresh() {
   render(data);
 }
 
+async function openTrace() {
+  const { data } = await api("GET", "/api/trace");
+  const list = $("trace-list");
+  list.replaceChildren();
+  for (const t of data.turns || []) {
+    const box = document.createElement("div"); box.className = "turn";
+    const label = document.createElement("div"); label.className = "label";
+    label.textContent = `${t.name}: ${t.label}`;
+    const pre = document.createElement("pre");
+    for (const line of t.tree.split("\n")) {          // plain text only; the AI step is highlighted
+      const span = document.createElement("span");
+      if (line.includes("★AI")) span.className = "ai";
+      span.textContent = line + "\n"; pre.appendChild(span);
+    }
+    box.append(label, pre); list.appendChild(box);
+  }
+  if (!list.children.length) list.textContent = "Nothing recorded yet. Send a message.";
+  $("trace-panel").hidden = false;
+}
+
+async function checkTrace() {
+  const { status, data } = await api("GET", "/api/trace");
+  $("trace-btn").hidden = !(status === 200 && data.enabled);
+}
+
 function showChat() {
-  $("login").hidden = true; $("chat").hidden = false; $("logout").hidden = false;
+  $("login").hidden = true; $("chat").hidden = false; $("logout").hidden = false; checkTrace();
   shown = -1; refresh(); clearInterval(timer); timer = setInterval(refresh, 3000);
   $("text").focus();
 }
@@ -130,6 +168,7 @@ function resetLogin() {
 function showLogin() {
   clearInterval(timer); resetLogin(); errors = [];
   $("login").hidden = false; $("chat").hidden = true; $("logout").hidden = true;
+  $("trace-btn").hidden = true; $("trace-panel").hidden = true;
   $("who").textContent = "DockPilot"; $("sub").textContent = "Driver chat";
 }
 
@@ -168,6 +207,8 @@ $("send").onsubmit = async (e) => {
   shown = -1; refresh();
 };
 
+$("trace-btn").onclick = openTrace;
+$("trace-close").onclick = () => { $("trace-panel").hidden = true; };
 $("logout").onclick = async () => { await api("POST", "/api/logout"); greeting = ""; showLogin(); };
 
 // already logged in (cookie)? go straight to the chat
