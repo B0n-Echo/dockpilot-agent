@@ -175,3 +175,59 @@ def test_warehouse_timeout_reaches_the_driver_through_the_timer(server):
     wh.call("POST", "/api/clock/advance", {"minutes": 1})
     told = [m for m in driver.messages() if m.startswith("The warehouse hasn't answered about D2 12:00 yet")]
     assert len(told) == 1
+
+
+def test_health_check(server):
+    """GET /healthz answers ok, for Render's health check (dp-23)."""
+    base, _ = server
+    assert Browser(base).call("GET", "/healthz") == (200, {"ok": True})
+
+
+def test_warehouse_password_protects_the_staff_side_only(server, monkeypatch):
+    """With WAREHOUSE_PASSWORD set: staff pages and actions need it (any user name); the driver chat doesn't."""
+    import base64
+    base, _ = server
+    monkeypatch.setenv("WAREHOUSE_PASSWORD", "s3cret")
+    def staff(path, method="GET", password=None, body=None):
+        """Call a staff path, optionally with Basic auth."""
+        headers = {"Content-Type": "application/json"}
+        if password:
+            headers["Authorization"] = "Basic " + base64.b64encode(f"anyone:{password}".encode()).decode()
+        req = urllib.request.Request(base + path, data=json.dumps(body).encode() if body else None, method=method,
+                                     headers=headers)
+        try:
+            with urllib.request.urlopen(req) as resp:
+                return resp.status
+        except urllib.error.HTTPError as err:
+            return err.code
+    for path, method, body in (("/warehouse", "GET", None), ("/api/warehouse", "GET", None),
+                               ("/api/clock/advance", "POST", {"minutes": 1})):
+        assert staff(path, method, body=body) == 401
+        assert staff(path, method, "wrong", body) == 401
+        assert staff(path, method, "s3cret", body) == 200
+    status, hello = Browser(base).login("9000010013")
+    assert status == 200  # drivers are not asked for the warehouse password
+
+
+def test_no_password_set_means_no_prompt(server, monkeypatch):
+    """On your laptop (no WAREHOUSE_PASSWORD) the warehouse page opens as before."""
+    base, _ = server
+    monkeypatch.delenv("WAREHOUSE_PASSWORD", raising=False)
+    with urllib.request.urlopen(base + "/warehouse") as resp:
+        assert resp.status == 200
+
+
+def test_session_cookie_is_secure_behind_https(server):
+    """Behind Render's HTTPS (X-Forwarded-Proto: https) the session cookie is also Secure; locally it isn't."""
+    base, _ = server
+    code = Browser(base).call("POST", "/api/login/start", {"phone": "9000010013"})[1]["demo_sms"]
+    def verify(extra):
+        """Verify the code and return the Set-Cookie header."""
+        req = urllib.request.Request(base + "/api/login/verify", method="POST",
+                                     data=json.dumps({"phone": "9000010013", "code": code}).encode(),
+                                     headers={"Content-Type": "application/json", **extra})
+        with urllib.request.urlopen(req) as resp:
+            return resp.headers["Set-Cookie"]
+    assert "Secure" in verify({"X-Forwarded-Proto": "https"})
+    code = Browser(base).call("POST", "/api/login/start", {"phone": "9000010013"})[1]["demo_sms"]
+    assert "Secure" not in verify({})

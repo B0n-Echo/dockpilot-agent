@@ -8,7 +8,7 @@ A walkthrough built from **real traces** (web demo, 26 Nov 2026, Claude Haiku vi
 uv run python -m dockpilot.webapp --reset --trace
 ```
 
-Chat as Kailash, then press **What happened?** in the chat header. Or, in a second terminal:
+Chat as Kailash, then, in a second terminal:
 
 ```bash
 uv run python -m dockpilot.trace --last
@@ -18,11 +18,11 @@ uv run python -m dockpilot.trace --last
 
 | Setting | Effect |
 |---|---|
-| `DOCKPILOT_TRACE=1` (or `--trace`) | Record every step locally (the panel, the terminal) |
+| `DOCKPILOT_TRACE=1` (or `--trace`) | Record every step locally (`python -m dockpilot.trace --last`) |
 | `LANGSMITH_TRACING=true` | Record, **and** send each turn to LangSmith (project `LANGSMITH_PROJECT`, default `dockpilot`) |
 | `LANGSMITH_API_KEY` | Needed to send. Kept but unused while `LANGSMITH_TRACING=false` |
 
-Tests always run with tracing off and LangSmith unreachable, whatever `.env` says (`tests/conftest.py`).
+Tests always run with tracing off and LangSmith unreachable, whatever `.env` says (`tests/conftest.py`). **Drivers never see traces** (the in-chat panel was removed in dp-23): show them in LangSmith.
 
 ---
 

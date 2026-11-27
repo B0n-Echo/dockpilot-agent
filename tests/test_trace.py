@@ -3,6 +3,7 @@ without a key. Offline: the rule reader or a fake AI."""
 
 import json
 import threading
+import urllib.error
 import urllib.request
 from datetime import datetime
 
@@ -121,29 +122,17 @@ def test_langsmith_only_with_a_key(conn, monkeypatch):
     assert {s.name for s in sent[0][0].spans} >= {"driver message", "slot search", "hold the slot"}
 
 
-def test_web_panel_shows_only_the_drivers_own_turns(conn, tmp_path):
-    """/api/trace needs a session and returns only the logged-in driver's turns."""
+def test_drivers_never_see_traces(conn, tmp_path):
+    """dp-23: traces are for LangSmith and developers, never the driver page: no /api/trace, no panel in chat.html."""
+    from dockpilot import webapp
     app = App(tmp_path / "work.db", FakeClock(datetime(2026, 8, 4, 9, 19, tzinfo=IST)), reader=read_message)
     httpd = make_server(app, port=0)
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
-    base = f"http://127.0.0.1:{httpd.server_address[1]}"
-    def browser(phone):
-        """Log in through the API; return a cookie-keeping opener."""
-        import http.cookiejar
-        o = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
-        post = lambda path, body: json.loads(o.open(urllib.request.Request(
-            base + path, data=json.dumps(body).encode(), method="POST",
-            headers={"Content-Type": "application/json"})).read())
-        code = post("/api/login/start", {"phone": phone})["demo_sms"]
-        post("/api/login/verify", {"phone": phone, "code": code})
-        return o, post
     try:
-        kailash, say = browser("9000010013")
-        say("/api/chat", {"text": "I am late by one hour."})
-        mine = json.loads(kailash.open(base + "/api/trace").read())
-        assert mine["enabled"] and mine["turns"][0]["label"] == "I am late by one hour."
-        sandeep, _ = browser("9000010012")
-        assert json.loads(sandeep.open(base + "/api/trace").read())["turns"] == []
+        with pytest.raises(urllib.error.HTTPError) as err:
+            urllib.request.urlopen(f"http://127.0.0.1:{httpd.server_address[1]}/api/trace")
+        assert err.value.code == 404
+        assert "trace" not in (webapp.STATIC / "chat.html").read_text().lower()
     finally:
         httpd.shutdown()
         httpd.server_close()

@@ -48,11 +48,13 @@ During the day, the timer (`lifecycle.check_drift`) re-checks bookings when a do
 
 You need [uv](https://docs.astral.sh/uv/). Python 3.12 is picked up automatically. There are no other dependencies.
 
-**Run the tests** (177 checks, about 25 seconds, all offline):
+**Run the tests** (181 checks, about 25 seconds, all offline):
 
 ```bash
 uv run pytest
 ```
+
+**Online:** DockPilot can run on Render: see [docs/07_deploy_render.md](docs/07_deploy_render.md). The warehouse side is password-protected there.
 
 **The web demo:** a driver chat page and a warehouse page.
 
@@ -102,7 +104,7 @@ uv run python -m dockpilot.llm_reader "Stuck in traffic near Shahpura, should ma
 uv run python -m dockpilot.webapp --reset --trace
 ```
 
-Chat as usual, then press **What happened?** in the chat header. Each message shows as a tree: login check, reading (★ the AI call, with exactly what was sent and what came back, or why it fell back to the rules), slot search, hold, booking, reply, with milliseconds per step. In a terminal:
+Every message is recorded as a tree of steps: login check, reading (★ the AI call, with exactly what was sent and what came back, or why it fell back to the rules), slot search, hold, booking, reply, with milliseconds per step. Traces are for developers and LangSmith; drivers never see them. In a second terminal:
 
 ```bash
 uv run python -m dockpilot.trace --last
@@ -169,7 +171,7 @@ Also measured:
 | `src/dockpilot/` | The code: one file per building block (see "How it works") |
 | `src/dockpilot/static/` | The two web pages (plain HTML + JavaScript) |
 | `src/dockpilot/migrations/` | DockPilot's own tables, added to a working copy of the data |
-| `tests/` | 177 checks, offline, on the real dummy data |
+| `tests/` | 181 checks, offline, on the real dummy data |
 | `data/source/` | The dataset exactly as received, with checksums |
 | `docs/` | Problem definition, data audit, decision register, and the replay output |
 | `progress/` | An internal build-progress page (`uv run python progress/server.py`) |

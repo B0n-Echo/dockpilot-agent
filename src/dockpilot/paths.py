@@ -3,6 +3,7 @@
 Other modules import these paths instead of hard-coding folders.
 """
 
+import os
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -17,5 +18,6 @@ DATA_WORK = REPO_ROOT / "data" / "work"
 SOURCE_DB = DATA_SOURCE / "setuhaul_freight_operations.db"
 """The original snapshot database."""
 
-WORK_DB = DATA_WORK / "dockpilot.db"
-"""The working database: a copy of SOURCE_DB plus DockPilot's own tables. Rebuilt by db.init_work_db()."""
+WORK_DB = Path(os.environ.get("DOCKPILOT_DB") or DATA_WORK / "dockpilot.db")
+"""The working database: a copy of SOURCE_DB plus DockPilot's own tables. Rebuilt by db.init_work_db().
+DOCKPILOT_DB moves it (dp-23), e.g. onto a disk."""

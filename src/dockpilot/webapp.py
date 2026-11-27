@@ -5,8 +5,11 @@
 """
 
 import argparse
+import base64
+import hmac
 import io
 import json
+import os
 import secrets
 import threading
 import time
@@ -160,19 +163,10 @@ def warehouse_reject(app, conn, body, sid):
         return 200, {"told_driver": notify_booking_result(conn, appt, app.clock, app.settings).ok}
 
 
-def trace_get(app, conn, body, sid):
-    """The logged-in driver's own recent traced turns (dp-20), newest first, as text trees."""
-    s = get_session(conn, sid, app.clock)
-    if s is None:
-        return 401, {"error": "Please log in again."}
-    if not trace.enabled():
-        return 200, {"enabled": False, "turns": []}
-    rows = conn.execute(
-        "SELECT turn_id, name, label FROM trace_turns WHERE thread_id IN "
-        "(SELECT thread_id FROM chat_threads WHERE driver_id = ?) ORDER BY started_at DESC, rowid DESC LIMIT 8",
-        (s.driver_id,)).fetchall()
-    return 200, {"enabled": True, "turns": [{"turn_id": r[0], "name": r[1], "label": r[2], "tree": trace.show(conn, r[0])}
-                                            for r in rows]}
+def healthz(app, conn, body, sid):
+    """For Render's health check (dp-23): the app is up and the database answers."""
+    conn.execute("SELECT 1").fetchone()
+    return 200, {"ok": True}
 
 
 def clock_advance(app, conn, body, sid):
@@ -190,12 +184,27 @@ ROUTES = {
     ("POST", "/api/chat"): chat_post, ("GET", "/api/chat"): chat_get, ("POST", "/api/logout"): logout,
     ("GET", "/api/warehouse"): warehouse_get, ("POST", "/api/warehouse/confirm"): warehouse_confirm,
     ("POST", "/api/warehouse/reject"): warehouse_reject, ("POST", "/api/clock/advance"): clock_advance,
-    ("GET", "/api/trace"): trace_get,
+    ("GET", "/healthz"): healthz,
 }
 """API routes: (method, path) -> handler(app, conn, body, session id) -> (status, json[, headers])."""
 
 PAGES = {"/": "chat.html", "/warehouse": "warehouse.html"}
 """Page routes."""
+
+STAFF = {"/warehouse", "/api/warehouse", "/api/warehouse/confirm", "/api/warehouse/reject", "/api/clock/advance"}
+"""Staff-only paths: they need WAREHOUSE_PASSWORD when it is set (dp-23)."""
+
+
+def _staff_ok(header):
+    """True when no WAREHOUSE_PASSWORD is set, or the Basic-auth header carries it (any user name)."""
+    password = os.environ.get("WAREHOUSE_PASSWORD")
+    if not password:
+        return True
+    try:
+        given = base64.b64decode((header or "").removeprefix("Basic ")).decode().partition(":")[2]
+    except ValueError:
+        return False
+    return hmac.compare_digest(given, password)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -216,6 +225,9 @@ class Handler(BaseHTTPRequestHandler):
     def _handle(self, method):
         """Run a page or API route."""
         path = self.path.split("?", 1)[0].rstrip("/") or "/"
+        if path in STAFF and not _staff_ok(self.headers.get("Authorization")):
+            return self._send(401, {"error": "Warehouse password needed."},
+                              headers={"WWW-Authenticate": 'Basic realm="DockPilot warehouse"'})
         if method == "GET" and path in PAGES:
             return self._send(200, (STATIC / PAGES[path]).read_text(encoding="utf-8"), "text/html; charset=utf-8")
         route = ROUTES.get((method, path))
@@ -244,7 +256,10 @@ class Handler(BaseHTTPRequestHandler):
                                                     "Please send that again in a moment."}, []
         finally:
             conn.close()
-        self._send(status, payload, headers=extra[0] if extra else None)
+        headers = dict(extra[0]) if extra else None
+        if headers and "Set-Cookie" in headers and self.headers.get("X-Forwarded-Proto") == "https":
+            headers["Set-Cookie"] += "; Secure"  # behind Render's HTTPS (dp-23)
+        self._send(status, payload, headers=headers)
 
     def do_GET(self):
         """GET pages and API."""
@@ -287,9 +302,10 @@ def _has_latest_tables(path):
 
 
 def main(argv=None):
-    """Start the demo: --port (8001), --reset for a fresh working database."""
+    """Start the demo: --host / --port (default HOST / PORT, else 127.0.0.1:8001), --reset for fresh data."""
     parser = argparse.ArgumentParser(description="DockPilot web chat demo.")
-    parser.add_argument("--port", type=int, default=8001)
+    parser.add_argument("--host", default=os.environ.get("HOST", "127.0.0.1"))
+    parser.add_argument("--port", type=int, default=int(os.environ.get("PORT", 8001)))
     parser.add_argument("--reset", action="store_true")
     parser.add_argument("--trace", action="store_true", help="record every step (see 'What happened?' in the chat)")
     args = parser.parse_args(argv)
@@ -299,8 +315,10 @@ def main(argv=None):
         db.init_work_db()
     app = App()
     threading.Thread(target=_timer, args=(app,), daemon=True).start()
-    server = make_server(app, port=args.port)
-    print(f"Driver chat: http://127.0.0.1:{args.port}   Warehouse: http://127.0.0.1:{args.port}/warehouse  (Ctrl+C to stop)")
+    server = make_server(app, host=args.host, port=args.port)
+    staff = "password set" if os.environ.get("WAREHOUSE_PASSWORD") else "no password"
+    print(f"Driver chat: http://{args.host}:{args.port}   Warehouse: http://{args.host}:{args.port}/warehouse "
+          f"({staff})  (Ctrl+C to stop)", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

@@ -1,0 +1,24 @@
+# Render blueprint for DockPilot (dp-23). Secret values are set in Render's dashboard, never here.
+services:
+  - type: web
+    name: dockpilot
+    runtime: python
+    plan: starter            # always-on; a free instance sleeps and restarts the demo clock
+    numInstances: 1          # one process only: the hold lock and the timer live inside it
+    buildCommand: pip install uv && uv sync --frozen --no-dev
+    startCommand: uv run --no-sync python -m dockpilot.webapp --reset --host 0.0.0.0 --port $PORT
+    healthCheckPath: /healthz
+    autoDeploy: true         # redeploy on every push to main
+    envVars:
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: OPENROUTER_MODEL
+        sync: false
+      - key: LANGSMITH_TRACING
+        sync: false
+      - key: LANGSMITH_API_KEY
+        sync: false
+      - key: LANGSMITH_PROJECT
+        sync: false
+      - key: WAREHOUSE_PASSWORD
+        sync: false
