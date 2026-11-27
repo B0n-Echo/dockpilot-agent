@@ -254,7 +254,7 @@
       "status": "done",
       "what": "Drivers get a real one-time code by email from Amazon Cognito; Cognito checks it; DockPilot's own session and trip checks carry on. The on-screen demo code stays for the laptop and tests.",
       "where": "cognito.py, auth.py, docs/08_cognito_setup.md",
-      "commit": ""
+      "commit": "a70436cf9db731b76f80291677fc043c93a76a9b"
     }
   ],
   "choices": [

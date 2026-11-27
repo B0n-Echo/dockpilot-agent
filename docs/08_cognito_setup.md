@@ -8,6 +8,8 @@ The data has no driver email addresses, so for the demo **every driver's code go
 
 ---
 
+> **Status (2026-11-28):** not switched on. In our AWS account (a free-plan "project"), AWS's own managed rule blocks every Cognito call, so Render runs the on-screen demo sign-in. The steps below work in an AWS account that allows Cognito and SES.
+
 ## 0. Before you start
 
 - **AWS CLI** installed and logged in to your account. Check with:
@@ -20,8 +22,10 @@ The data has no driver email addresses, so for the demo **every driver's code go
 - **The variables used below.** Fill them in once per terminal, with your own values:
 
   ```bash
-  export AWS_REGION=ap-south-1
+  export AWS_REGION=ap-south-1 AWS_DEFAULT_REGION=ap-south-1
   ```
+
+  Both names are set because the CLI's own default region may be different (e.g. `us-east-1`), and everything here must be in Mumbai.
 
   ```bash
   export DP_EMAIL=you@example.com
