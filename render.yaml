@@ -3,7 +3,7 @@ services:
   - type: web
     name: dockpilot
     runtime: python
-    plan: starter            # always-on; a free instance sleeps and restarts the demo clock
+    plan: free               # free tier: sleeps after ~15 min idle; waking restarts the app (fresh data, clock 09:45)
     numInstances: 1          # one process only: the hold lock and the timer live inside it
     buildCommand: pip install uv && uv sync --frozen --no-dev
     startCommand: uv run --no-sync python -m dockpilot.webapp --reset --host 0.0.0.0 --port $PORT

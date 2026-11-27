@@ -2,7 +2,7 @@
 
 Step by step, from the repo to a public HTTPS address. It takes about 15 minutes the first time.
 
-The service is described in [`render.yaml`](../render.yaml): one always-on Python web service, with fresh base data on every start, a health check at `/healthz`, and an automatic redeploy on every push to `main`. **Secret values are never in the repo:** you paste them into Render.
+The service is described in [`render.yaml`](../render.yaml): one **free-tier** Python web service, with fresh base data on every start, a health check at `/healthz`, and an automatic redeploy on every push to `main`. **Secret values are never in the repo:** you paste them into Render.
 
 ---
 
@@ -21,20 +21,34 @@ The service is described in [`render.yaml`](../render.yaml): one always-on Pytho
 | `LANGSMITH_PROJECT` | e.g. `dockpilot-render` | A separate project keeps online traces apart from your laptop's |
 | `WAREHOUSE_PASSWORD` | a password you choose | Protects the warehouse page, its buttons and "+10 min" |
 
-## Steps
+## Steps (free tier, no payment details)
 
-1. Render dashboard → **New** → **Blueprint**.
-2. Pick the repo **dockpilot-agent**, branch **main**. Render reads `render.yaml` and shows one web service, **dockpilot**.
-3. Render asks for the six values above (they're marked `sync: false`). Paste them, then **Apply**.
-4. Wait for the build, about 1–2 minutes. In **Logs** you should see, in order:
+**Use New → Web Service.** It's the simplest way, and it never asks for payment on the free instance. (New → Blueprint also works with the free plan set in `render.yaml`, but it's not needed.)
+
+1. Render dashboard → **New** → **Web Service** → pick the repo **dockpilot-agent**.
+2. Fill in:
+
+| Field | Value |
+|---|---|
+| Name | `dockpilot` |
+| Branch | `main` |
+| Language / Runtime | **Python 3** |
+| Build Command | `pip install uv && uv sync --frozen --no-dev` |
+| Start Command | `uv run --no-sync python -m dockpilot.webapp --reset --host 0.0.0.0 --port $PORT` |
+| Instance Type | **Free** |
+
+3. **Environment Variables:** add the six values above (Add Environment Variable, one per row).
+4. **Advanced → Health Check Path:** `/healthz`. Auto-Deploy: **Yes**.
+5. **Create Web Service.**
+6. Wait for the build, about 1–2 minutes. In **Logs** you should see, in order:
    - `pip install uv` … `uv sync` … installed packages
    - `Working database ready…`, then `Driver chat: http://0.0.0.0:10000 … (password set)`
    - the health check passing; the service turns **Live**
-5. Open the service's address, `https://dockpilot-xxxx.onrender.com`:
+7. Open the service's address, `https://dockpilot-xxxx.onrender.com`:
    - **The driver chat** opens: log in as Kailash (code on screen), as on your laptop.
    - **`/warehouse`**: the browser asks for a user name and password. Any user name, plus your `WAREHOUSE_PASSWORD`.
    - **LangSmith:** traces appear in the project you named.
-6. Send me the address, and I'll run the full demo on it.
+8. Send me the address, and I'll run the full demo on it.
 
 ## Day to day
 
@@ -45,7 +59,9 @@ The service is described in [`render.yaml`](../render.yaml): one always-on Pytho
 | **Change a secret** | Render → dockpilot → **Environment** → edit → Save (the app restarts) |
 | **See errors** | Render → dockpilot → **Logs** (a crash's full error is printed there; drivers only see a friendly sentence) |
 
-**Before a live presentation:** restart the service about 5 minutes before you start. The demo clock starts at 09:45 when the app starts, not when you open the page.
+**The free tier sleeps.** After about 15 minutes with no visitors, Render puts the app to sleep. The next visit wakes it, which takes **about 30–60 seconds**, and the app starts fresh: base data, demo clock at 09:45. That suits a demo.
+
+**Before a live presentation:** open the address about 5 minutes before you start, so it's awake and the clock starts near your talk. Don't leave it idle for 15 minutes mid-demo, or it resets. If you ever need it always on, change the instance type to a paid one in Render. No code change is needed.
 
 ## If something goes wrong
 

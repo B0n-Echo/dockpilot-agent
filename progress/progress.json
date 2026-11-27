@@ -246,7 +246,7 @@
       "status": "done",
       "what": "Ready to run at a public web address: settings from the environment, a health check, a password on the warehouse side, and no internals shown to drivers. Step-by-step deploy guide included.",
       "where": "webapp.py, render.yaml, docs/07_deploy_render.md",
-      "commit": ""
+      "commit": "a6f26f4"
     }
   ],
   "choices": [
