@@ -54,6 +54,7 @@ The answer sheet for "what if the data is wrong?" and "what if X breaks?". Every
 | **Working database missing or out of date** | Rebuilt from the original data when the server starts | `webapp._has_latest_tables` |
 | **Driver with three trips** | All three listed: *"You have 3 trips today: …, … or …. Which one is this about?"*; "third" or the order number picks one | Checked 2026-11-26 |
 | **Unknown phone / cancelled trip / suspended driver** | Refused at login with the reason; no code is made | `test_auth.py` |
+| **Real sign-in (Cognito) problems:** wrong or expired code, too many tries, driver with no Cognito account, Cognito unreachable | A plain reason for the driver; refused drivers never trigger an email; Cognito's own error type goes to the server log | `test_cognito.py` |
 | **Trip cancelled mid-chat / session expired** | The next message is refused (401) and the page returns to login | `test_auth.py`, `test_webapp.py` |
 | **Empty or very long message** | Empty → *"Please type a message."*; text is cut at 1,000 characters; a request over 10 KB is refused (413) | `webapp.chat_post`; 413 in `test_webapp.py` |
 | **Driver goes silent** | Nudge at 5 min, close at 10 (+ `ETA_UNRESOLVED` if we asked for the time) | Replay S03 |

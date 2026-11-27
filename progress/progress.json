@@ -2,7 +2,7 @@
   "title": "DockPilot finds late trucks a slot they can really use, holds it safely, and hands the rest to a person",
   "lede": "A progress note in plain words. DockPilot helps a warehouse when trucks run late: it works out which unloading slots still fit, offers the best ones, and makes sure two drivers can never be given the same slot. Built on the practice data from 4 August 2026.",
   "updated": "2026-11-26",
-  "checks_passing": 181,
+  "checks_passing": 188,
   "rules_checked": 15,
   "source_changes": 0,
   "journey": [
@@ -246,7 +246,15 @@
       "status": "done",
       "what": "Ready to run at a public web address: settings from the environment, a health check, a password on the warehouse side, and no internals shown to drivers. Step-by-step deploy guide included.",
       "where": "webapp.py, render.yaml, docs/07_deploy_render.md",
-      "commit": "a6f26f4"
+      "commit": "f08475b"
+    },
+    {
+      "id": "dp-24",
+      "name": "Real sign-in (Cognito)",
+      "status": "done",
+      "what": "Drivers get a real one-time code by email from Amazon Cognito; Cognito checks it; DockPilot's own session and trip checks carry on. The on-screen demo code stays for the laptop and tests.",
+      "where": "cognito.py, auth.py, docs/08_cognito_setup.md",
+      "commit": ""
     }
   ],
   "choices": [
@@ -269,5 +277,5 @@
       ]
     }
   ],
-  "limits": "Honest limits today: the login code is shown on screen instead of sent by SMS, and the chat is a local web page (no WhatsApp yet). Coordinators see hand-offs but can't mark them handled or move another truck's booking yet. A driver's own limits (\"after 12\", \"must leave by 1:30\") are read but not yet used to choose slots, and a no-show truck isn't messaged. Timings the client hasn't confirmed run on stated defaults."
+  "limits": "Honest limits today: sign-in codes go by email (Cognito), not SMS, and the chat is a local web page (no WhatsApp yet). Coordinators see hand-offs but can't mark them handled or move another truck's booking yet. A driver's own limits (\"after 12\", \"must leave by 1:30\") are read but not yet used to choose slots, and a no-show truck isn't messaged. Timings the client hasn't confirmed run on stated defaults."
 }

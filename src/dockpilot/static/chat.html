@@ -50,7 +50,7 @@
       <label for="phone">Your phone number</label>
       <input id="phone" inputmode="tel" placeholder="e.g. 9000010013" autocomplete="off">
       <button class="btn" id="send-code">Send code</button>
-      <div class="sms" id="sms" hidden>Demo SMS: your DockPilot code is <b id="sms-code"></b></div>
+      <div class="sms" id="sms" hidden><span id="sms-text"></span> <b id="sms-code"></b></div>
       <div id="code-box" hidden>
         <label for="code">Code</label>
         <input id="code" inputmode="numeric" maxlength="6" autocomplete="one-time-code">
@@ -137,7 +137,9 @@ $("send-code").onclick = async () => {
   resetLogin();
   const { status, data } = await api("POST", "/api/login/start", { phone: $("phone").value });
   if (status !== 200) { $("login-error").textContent = data.error; return; }
-  $("sms-code").textContent = data.demo_sms;
+  $("sms-text").textContent = data.demo_sms ? "Demo SMS: your DockPilot code is"
+    : `We've emailed your code to ${data.sent_to}. It can take a minute to arrive.`;
+  $("sms-code").textContent = data.demo_sms || "";
   $("sms").hidden = $("code-box").hidden = $("verify").hidden = false;
   $("code").focus();
 };
@@ -170,6 +172,10 @@ $("send").onsubmit = async (e) => {
 
 $("logout").onclick = async () => { await api("POST", "/api/logout"); greeting = ""; showLogin(); };
 
+// real sign-in (Cognito): no demo-drivers hint and no on-screen code
+api("GET", "/api/config").then(({ data }) => {
+  if (data.auth_mode === "cognito") document.querySelector(".card.demo").hidden = true;
+});
 // already logged in (cookie)? go straight to the chat
 api("GET", "/api/chat").then(({ status }) => { if (status === 200) showChat(); });
 </script>

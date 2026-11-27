@@ -48,13 +48,15 @@ During the day, the timer (`lifecycle.check_drift`) re-checks bookings when a do
 
 You need [uv](https://docs.astral.sh/uv/). Python 3.12 is picked up automatically. There are no other dependencies.
 
-**Run the tests** (181 checks, about 25 seconds, all offline):
+**Run the tests** (188 checks, about 25 seconds, all offline):
 
 ```bash
 uv run pytest
 ```
 
 **Online:** DockPilot can run on Render: see [docs/07_deploy_render.md](docs/07_deploy_render.md). The warehouse side is password-protected there.
+
+**Real sign-in:** with `AUTH_MODE=cognito`, drivers get a real one-time code by email from Amazon Cognito instead of the on-screen demo code. Setup: [docs/08_cognito_setup.md](docs/08_cognito_setup.md).
 
 **The web demo:** a driver chat page and a warehouse page.
 
@@ -171,7 +173,7 @@ Also measured:
 | `src/dockpilot/` | The code: one file per building block (see "How it works") |
 | `src/dockpilot/static/` | The two web pages (plain HTML + JavaScript) |
 | `src/dockpilot/migrations/` | DockPilot's own tables, added to a working copy of the data |
-| `tests/` | 181 checks, offline, on the real dummy data |
+| `tests/` | 188 checks, offline, on the real dummy data |
 | `data/source/` | The dataset exactly as received, with checksums |
 | `docs/` | Problem definition, data audit, decision register, and the replay output |
 | `progress/` | An internal build-progress page (`uv run python progress/server.py`) |
@@ -180,7 +182,7 @@ Also measured:
 
 ## Honest limits
 
-- The login code is shown on screen instead of sent by SMS, and the chat is a local web page instead of WhatsApp.
+- Sign-in: with Cognito switched on, the code goes by **email**, not SMS. On your laptop it's shown on screen (demo mode). The chat is a web page, not WhatsApp.
 - Coordinators see hand-offs on the warehouse page but can't mark them handled, or move another truck's booking, yet.
 - A driver's own limits ("any slot after 12", "must leave before 1:30") are read but not yet used to choose slots.
 - Drivers who aren't chatting with DockPilot aren't told when their booking changes (no SMS / WhatsApp channel yet).
@@ -194,4 +196,5 @@ Also measured:
 - [Data audit](docs/02_data_audit.md): every data issue, with the query that proves it.
 - [Decision register](docs/03_decision_register.md): the 13 design decisions, each with its answer, reason and evidence from the build.
 - [How it works](docs/04_how_it_works.md): one message end to end from real traces, who calls whom, what happens when things fail, and the guardrails.
+- [Deploy on Render](docs/07_deploy_render.md) · [Cognito sign-in setup](docs/08_cognito_setup.md)
 - [Bad data and edge cases](docs/05_bad_data_and_edge_cases.md): what DockPilot does when the data is wrong or something breaks, with the proof for each and the honest gaps.

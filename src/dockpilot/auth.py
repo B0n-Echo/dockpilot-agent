@@ -8,7 +8,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-from dockpilot import trace
+from dockpilot import cognito, trace
 from dockpilot.clock import to_iso
 from dockpilot.db import write_transaction
 from dockpilot.settings import SETTINGS
@@ -48,12 +48,14 @@ class Session:
 
 @dataclass(frozen=True)
 class LoginResult:
-    """The answer to a login step: ok, or a plain reason; plus the code or the session."""
+    """The answer to a login step: ok, or a plain reason; plus the demo code, where Cognito sent the code, or the
+    session."""
 
     ok: bool
     reason: str | None = None
     code: str | None = None
     session: Session | None = None
+    sent_to: str | None = None
 
 
 def _log(conn, clock, event_type, entity_id, shipment_id=None, payload=None):
@@ -107,14 +109,24 @@ def request_code(conn, phone, clock, settings=SETTINGS):
             _log(conn, clock, "LOGIN_REFUSED", driver["driver_id"] if driver else "unknown", payload={"reason": reason})
         return LoginResult(False, reason)
     code, code_id, now = f"{secrets.randbelow(10**6):06d}", f"CODE-{uuid.uuid4().hex[:12]}", clock.now()
+    session, sent_to = None, None
+    if cognito.enabled():  # dp-24: Cognito makes and emails the code; we never see it
+        try:
+            session, sent_to = cognito.start_sign_in(driver["driver_id"])
+        except cognito.CognitoError as exc:
+            with write_transaction(conn):
+                _log(conn, clock, "LOGIN_REFUSED", driver["driver_id"], payload={"reason": str(exc), "mode": "cognito"})
+            return LoginResult(False, str(exc))
     with write_transaction(conn):
         conn.execute("UPDATE login_codes SET cancelled_at = ? WHERE driver_id = ? AND used_at IS NULL AND cancelled_at IS NULL",
                      (to_iso(now), driver["driver_id"]))
-        conn.execute("INSERT INTO login_codes (code_id, driver_id, code_hash, created_at, expires_at) VALUES (?, ?, ?, ?, ?)",
-                     (code_id, driver["driver_id"], _hash(code_id, code), to_iso(now),
-                      to_iso(now + timedelta(minutes=settings.login_code_minutes))))
-        _log(conn, clock, "LOGIN_CODE_SENT", driver["driver_id"], payload={"code_id": code_id})
-    return LoginResult(True, code=code)
+        conn.execute("INSERT INTO login_codes (code_id, driver_id, code_hash, created_at, expires_at, cognito_session) "
+                     "VALUES (?, ?, ?, ?, ?, ?)",
+                     (code_id, driver["driver_id"], "cognito" if session else _hash(code_id, code), to_iso(now),
+                      to_iso(now + timedelta(minutes=settings.login_code_minutes)), session))
+        _log(conn, clock, "LOGIN_CODE_SENT", driver["driver_id"],
+             payload={"code_id": code_id, "mode": "cognito" if session else "demo"})
+    return LoginResult(True, sent_to=sent_to) if session else LoginResult(True, code=code)
 
 
 def verify_code(conn, phone, code, clock, settings=SETTINGS):
@@ -129,7 +141,20 @@ def verify_code(conn, phone, code, clock, settings=SETTINGS):
     if datetime.fromisoformat(row["expires_at"]) <= now:
         return LoginResult(False, "This code has expired. Please ask for a new one.")
     did = driver["driver_id"]
-    if not secrets.compare_digest(_hash(row["code_id"], (code or "").strip()), row["code_hash"]):
+    if row["cognito_session"]:  # dp-24: Cognito checks the code
+        try:
+            cognito.finish_sign_in(did, (code or "").strip(), row["cognito_session"])
+        except cognito.CognitoError as exc:
+            wrong = str(exc).startswith("Wrong code")
+            left = settings.login_max_tries - row["wrong_tries"] - 1
+            with write_transaction(conn):
+                conn.execute("UPDATE login_codes SET wrong_tries = wrong_tries + ? WHERE code_id = ?",
+                             (1 if wrong else settings.login_max_tries, row["code_id"]))
+                _log(conn, clock, "LOGIN_REFUSED", did, payload={"reason": str(exc), "mode": "cognito"})
+            if wrong and left:
+                return LoginResult(False, f"Wrong code. {left} {'try' if left == 1 else 'tries'} left.")
+            return LoginResult(False, "Wrong code. Please ask for a new one." if wrong else str(exc))
+    elif not secrets.compare_digest(_hash(row["code_id"], (code or "").strip()), row["code_hash"]):
         left = settings.login_max_tries - row["wrong_tries"] - 1
         with write_transaction(conn):
             conn.execute("UPDATE login_codes SET wrong_tries = wrong_tries + 1 WHERE code_id = ?", (row["code_id"],))

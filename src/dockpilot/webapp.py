@@ -19,7 +19,7 @@ from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from dockpilot import db, paths, trace
+from dockpilot import cognito, db, paths, trace
 from dockpilot.allocation import settle_requests
 from dockpilot.auth import end_session, get_session, request_code, verify_code
 from dockpilot.bookings import PENDING, check_warehouse_timeouts, confirm_booking, reject_booking
@@ -79,9 +79,16 @@ def _trips(session):
 
 
 def login_start(app, conn, body, sid):
-    """Step 1: the code to show on screen (demo SMS), or the refusal."""
+    """Step 1: the demo code to show on screen, or (Cognito) where the code was emailed, or the refusal."""
     r = request_code(conn, str(body.get("phone", "")), app.clock, app.settings)
-    return (200, {"demo_sms": r.code}) if r.ok else (403, {"error": r.reason})
+    if not r.ok:
+        return 403, {"error": r.reason}
+    return 200, {"demo_sms": r.code} if r.code else {"sent_to": r.sent_to}
+
+
+def config(app, conn, body, sid):
+    """What the login page needs to know: demo codes on screen, or real codes by email (dp-24)."""
+    return 200, {"auth_mode": "cognito" if cognito.enabled() else "demo"}
 
 
 def login_verify(app, conn, body, sid):
@@ -184,7 +191,7 @@ ROUTES = {
     ("POST", "/api/chat"): chat_post, ("GET", "/api/chat"): chat_get, ("POST", "/api/logout"): logout,
     ("GET", "/api/warehouse"): warehouse_get, ("POST", "/api/warehouse/confirm"): warehouse_confirm,
     ("POST", "/api/warehouse/reject"): warehouse_reject, ("POST", "/api/clock/advance"): clock_advance,
-    ("GET", "/healthz"): healthz,
+    ("GET", "/healthz"): healthz, ("GET", "/api/config"): config,
 }
 """API routes: (method, path) -> handler(app, conn, body, session id) -> (status, json[, headers])."""
 
@@ -291,12 +298,12 @@ def _timer(app, seconds=5):
 
 
 def _has_latest_tables(path):
-    """True if the working database exists and already has every migration (dp-20's table is the newest)."""
+    """True if the working database exists and already has every migration (dp-24's column is the newest)."""
     if not Path(path).exists():
         return False
     conn = db.connect(path)
     try:
-        return conn.execute("SELECT 1 FROM sqlite_master WHERE name = 'trace_spans'").fetchone() is not None
+        return any(r["name"] == "cognito_session" for r in conn.execute("PRAGMA table_info(login_codes)"))
     finally:
         conn.close()
 
