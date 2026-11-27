@@ -197,4 +197,5 @@ Also measured:
 - [Decision register](docs/03_decision_register.md): the 13 design decisions, each with its answer, reason and evidence from the build.
 - [How it works](docs/04_how_it_works.md): one message end to end from real traces, who calls whom, what happens when things fail, and the guardrails.
 - [Deploy on Render](docs/07_deploy_render.md) · [Cognito sign-in setup](docs/08_cognito_setup.md)
+- [Code map](docs/06_code_map.md): one picture of how the parts connect, four requests followed hop by hop (file:line, what goes in and out, what changes in the database), and which code writes and reads each table.
 - [Bad data and edge cases](docs/05_bad_data_and_edge_cases.md): what DockPilot does when the data is wrong or something breaks, with the proof for each and the honest gaps.

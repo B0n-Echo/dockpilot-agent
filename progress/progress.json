@@ -1,8 +1,8 @@
 {
   "title": "DockPilot finds late trucks a slot they can really use, holds it safely, and hands the rest to a person",
   "lede": "A progress note in plain words. DockPilot helps a warehouse when trucks run late: it works out which unloading slots still fit, offers the best ones, and makes sure two drivers can never be given the same slot. Built on the practice data from 4 August 2026.",
-  "updated": "2026-11-26",
-  "checks_passing": 188,
+  "updated": "2026-11-28",
+  "checks_passing": 189,
   "rules_checked": 15,
   "source_changes": 0,
   "journey": [
@@ -254,7 +254,15 @@
       "status": "done",
       "what": "Drivers get a real one-time code by email from Amazon Cognito; Cognito checks it; DockPilot's own session and trip checks carry on. The on-screen demo code stays for the laptop and tests.",
       "where": "cognito.py, auth.py, docs/08_cognito_setup.md",
-      "commit": "a70436cf9db731b76f80291677fc043c93a76a9b"
+      "commit": "a70436c"
+    },
+    {
+      "id": "dp-25",
+      "name": "Code map",
+      "status": "done",
+      "what": "One page shows how every part connects: a picture, four requests followed hop by hop with file:line, what goes in and out and what changes in the database, and which code writes and reads each table. A check keeps every link true.",
+      "where": "docs/06_code_map.md, docs/06_code_map.svg",
+      "commit": ""
     }
   ],
   "choices": [

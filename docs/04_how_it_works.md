@@ -115,6 +115,8 @@ warehouse confirms · APT-…                                    4 ms
 
 ## 3. Who calls whom
 
+The full map, with a picture, file:line links for four requests and the data map, is [06_code_map.md](06_code_map.md).
+
 ```
 web page ──► webapp.py routes
    /api/login/*  ──► auth.request_code / verify_code
