@@ -56,6 +56,8 @@ uv run python -m dockpilot.webapp --reset
 
 Then open http://127.0.0.1:8001. More below.
 
+**Demo videos:** [a case that escalates (S05)](https://drive.google.com/file/d/1Ta9ckrGLKWTaeWE5UNY30sDjw_75iKhc/view?usp=sharing) · [the happy path (Kailash)](https://drive.google.com/file/d/1Icg0N7FLIxU844S-cVqxk0F4RxRdZ0_Z/view?usp=sharing)
+
 ### Stack and library versions
 
 | What | Version | Used for |

@@ -58,7 +58,7 @@ Then open http://127.0.0.1:8001 (driver chat) and http://127.0.0.1:8001/warehous
 
 ## 4. Scenario run video
 
-**Link:** _(recording link to be added)_. The scripted replay of the same case: [S05 transcript](https://github.com/B0n-Echo/dockpilot-agent/blob/main/docs/scenarios/S05.md). All 14 cases are in the [replay report](https://github.com/B0n-Echo/dockpilot-agent/blob/main/docs/scenarios/report.md); replay with `uv run python -m dockpilot.scenarios`.
+**Link:** [S05 escalation video](https://drive.google.com/file/d/1Ta9ckrGLKWTaeWE5UNY30sDjw_75iKhc/view?usp=sharing). Also: [happy-path video](https://drive.google.com/file/d/1Icg0N7FLIxU844S-cVqxk0F4RxRdZ0_Z/view?usp=sharing), where Kailash is late, picks a slot, and the warehouse confirms. The scripted replay of the escalation case: [S05 transcript](https://github.com/B0n-Echo/dockpilot-agent/blob/main/docs/scenarios/S05.md). All 14 cases are in the [replay report](https://github.com/B0n-Echo/dockpilot-agent/blob/main/docs/scenarios/report.md); replay with `uv run python -m dockpilot.scenarios`.
 
 **Which case escalates and why:**
 - **S05, a reefer truck (SHP1015).** The driver says "Evening traffic. ETA 6:30. Can the reefer unload tonight?"
