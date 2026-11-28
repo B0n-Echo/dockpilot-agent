@@ -2,7 +2,7 @@
   "title": "DockPilot finds late trucks a slot they can really use, holds it safely, and hands the rest to a person",
   "lede": "A progress note in plain words. DockPilot helps a warehouse when trucks run late: it works out which unloading slots still fit, offers the best ones, and makes sure two drivers can never be given the same slot. Built on the practice data from 4 August 2026.",
   "updated": "2026-11-28",
-  "checks_passing": 189,
+  "checks_passing": 197,
   "rules_checked": 15,
   "source_changes": 0,
   "journey": [
@@ -262,6 +262,14 @@
       "status": "done",
       "what": "One page shows how every part connects: a picture, four requests followed hop by hop with file:line, what goes in and out and what changes in the database, and which code writes and reads each table. A check keeps every link true.",
       "where": "docs/06_code_map.md, docs/06_code_map.svg",
+      "commit": "d7f2e43"
+    },
+    {
+      "id": "dp-26",
+      "name": "Login limit",
+      "status": "done",
+      "what": "A driver gets at most 3 login codes in 15 minutes; a 4th request locks them out for 15 minutes. Pressing again doesn't extend it, and a code already in hand still works. Nobody can keep asking and guessing forever.",
+      "where": "auth.py, settings.py",
       "commit": ""
     }
   ],

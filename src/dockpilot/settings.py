@@ -46,6 +46,15 @@ class Settings:
     login_max_tries: int = 3
     """Wrong tries allowed before a login code is burned (dp-18)."""
 
+    login_codes_per_window: int = 3
+    """Login codes a driver may get within login_window_minutes before a lockout (dp-26)."""
+
+    login_window_minutes: int = 15
+    """The window those codes are counted in (dp-26)."""
+
+    login_lockout_minutes: int = 15
+    """How long a driver who asked for too many codes must wait (dp-26)."""
+
     session_hours: int = 12
     """How long a driver stays logged in: one driving shift (dp-18)."""
 

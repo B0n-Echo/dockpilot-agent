@@ -47,7 +47,7 @@ The message before was "I am late by one hour.", so the agent is waiting for an 
 |---|---|---|---|---|---|
 | 1 | [webapp.py:107](../src/dockpilot/webapp.py#L107) `chat_post` | `{"text": …}` + session cookie | calls the agent | — | — |
 | 2 | [conversation.py:480](../src/dockpilot/conversation.py#L480) `handle_message` | session id, text | `Reply` (text + state) | `trace_turns` +1, `trace_spans` +9 | **driver message** (the turn) |
-| 3 | [auth.py:177](../src/dockpilot/auth.py#L177) `get_session` | session id | driver DRV013, trip SHP1013 (or "log in again") | — | login check |
+| 3 | [auth.py:203](../src/dockpilot/auth.py#L203) `get_session` | session id | driver DRV013, trip SHP1013 (or "log in again") | — | login check |
 | 4 | [conversation.py:83](../src/dockpilot/conversation.py#L83) `_resend` | the text | no: not a repeat | — | same message again? |
 | 5 | [conversation.py:471](../src/dockpilot/conversation.py#L471) `_read` → [llm_reader.py:92](../src/dockpilot/llm_reader.py#L92) `read_message_ai` | text, time sent | `Reading`: ETA_UPDATE, 11:30, MEDIUM | — | read the message (+ AI model call, when the AI is on) |
 | 6 | same, fallback: [reader.py:63](../src/dockpilot/reader.py#L63) `read_message` | text | the rules' `Reading` | — | (note: "rules used") |
@@ -97,10 +97,11 @@ Login isn't traced (no trace turn). The `events` table is its diary.
 | # | Where | In | Out | Database |
 |---|---|---|---|---|
 | 1 | [webapp.py:81](../src/dockpilot/webapp.py#L81) `login_start` | `{"phone": "9000010013"}` | `{"demo_sms": code}` (demo) or `{"sent_to": …}` (Cognito) | — |
-| 2 | [auth.py:101](../src/dockpilot/auth.py#L101) `request_code` | phone | code sent, or a refusal reason | `login_codes` +1, `events` +1 (LOGIN_CODE_SENT) |
-| 3 | [auth.py:86](../src/dockpilot/auth.py#L86) `active_trips` | driver id | trips in progress (a driver with none is refused here, before any code) | — |
+| 2 | [auth.py:121](../src/dockpilot/auth.py#L121) `request_code` | phone | code sent, or a refusal reason | `login_codes` +1, `events` +1 (LOGIN_CODE_SENT) |
+| 3 | [auth.py:87](../src/dockpilot/auth.py#L87) `active_trips` | driver id | trips in progress (a driver with none is refused here, before any code) | — |
+| 3b | [auth.py:102](../src/dockpilot/auth.py#L102) `_locked_until` | driver id | lockout end time, or none (dp-26: at most 3 codes per 15 minutes, then 15 minutes' wait) | `events` +1 (LOGIN_LOCKED) when a lockout starts |
 | 4 | [webapp.py:94](../src/dockpilot/webapp.py#L94) `login_verify` | phone, code | greeting + trips, session cookie (HttpOnly, 12 h) | — |
-| 5 | [auth.py:132](../src/dockpilot/auth.py#L132) `verify_code` | phone, code | session, or "Wrong code. N tries left." | `driver_sessions` +1, `login_codes` ~, `events` +1 (LOGIN_OK) |
+| 5 | [auth.py:158](../src/dockpilot/auth.py#L158) `verify_code` | phone, code | session, or "Wrong code. N tries left." | `driver_sessions` +1, `login_codes` ~, `events` +1 (LOGIN_OK) |
 
 With `AUTH_MODE=cognito`, steps 2 and 5 also call [cognito.py](../src/dockpilot/cognito.py). It's parked for now: AWS blocks Cognito in our account.
 

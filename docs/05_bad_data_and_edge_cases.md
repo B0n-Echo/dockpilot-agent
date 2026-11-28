@@ -55,6 +55,7 @@ The answer sheet for "what if the data is wrong?" and "what if X breaks?". Every
 | **Driver with three trips** | All three listed: *"You have 3 trips today: …, … or …. Which one is this about?"*; "third" or the order number picks one | Checked 2026-11-26 |
 | **Unknown phone / cancelled trip / suspended driver** | Refused at login with the reason; no code is made | `test_auth.py` |
 | **Real sign-in (Cognito) problems:** wrong or expired code, too many tries, driver with no Cognito account, Cognito unreachable | A plain reason for the driver; refused drivers never trigger an email; Cognito's own error type goes to the server log | `test_cognito.py` |
+| **Someone keeps pressing "Send code" to guess codes** | At most 3 codes per driver in 15 minutes; a 4th starts a 15-minute lockout (*"Too many codes asked for. Please try again in N minutes."*). Pressing again doesn't extend it, and a code already in hand still works. The worst case is 9 guesses every 30 minutes, out of a million possible codes. Honest limit: someone who knows a driver's number can lock that driver out for 15 minutes | `test_login_limit.py` |
 | **Trip cancelled mid-chat / session expired** | The next message is refused (401) and the page returns to login | `test_auth.py`, `test_webapp.py` |
 | **Empty or very long message** | Empty → *"Please type a message."*; text is cut at 1,000 characters; a request over 10 KB is refused (413) | `webapp.chat_post`; 413 in `test_webapp.py` |
 | **Driver goes silent** | Nudge at 5 min, close at 10 (+ `ETA_UNRESOLVED` if we asked for the time) | Replay S03 |
@@ -69,6 +70,6 @@ The answer sheet for "what if the data is wrong?" and "what if X breaks?". Every
 | Gap | Risk | Suggested fix |
 |---|---|---|
 | **Drivers without a chat open aren't told** about drift (dock problem, no-show, new arrival time) | They find out when they next write | Needs a real channel (SMS / WhatsApp) |
-| **No rate limit** on "Send code" or on messages | Someone could spam codes or messages | A small per-phone limit (SQLite) |
+| **No rate limit on messages** ("Send code" has one since dp-26) | Someone logged in could spam messages | A small per-session limit (SQLite) |
 | **Coordinators can't close escalations** | The warehouse page keeps resolved items | Acknowledge / resolve buttons |
 | **The AI is called even for "1" / "yes"** | 1.7 s and cost per short reply | Skip the AI for short replies |

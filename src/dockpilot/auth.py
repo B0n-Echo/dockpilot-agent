@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import math
 import re
 import secrets
 import uuid
@@ -98,6 +99,25 @@ def active_trips(conn, driver_id, clock):
     return [Trip(*r) for r in rows]
 
 
+def _locked_until(conn, driver_id, clock, settings=SETTINGS):
+    """When this driver's login lockout ends, starting one if they've had too many codes lately (dp-26); else None."""
+    now = clock.now()
+    last = conn.execute("SELECT payload FROM events WHERE event_type = 'LOGIN_LOCKED' AND entity_id = ? "
+                        "ORDER BY event_id DESC LIMIT 1", (driver_id,)).fetchone()
+    ended = datetime.fromisoformat(json.loads(last["payload"])["until"]) if last else None
+    if ended and now < ended:
+        return ended
+    since = max(now - timedelta(minutes=settings.login_window_minutes), ended or now - timedelta(days=365))
+    recent = sum(datetime.fromisoformat(r["created_at"]) > since for r in conn.execute(
+        "SELECT created_at FROM login_codes WHERE driver_id = ?", (driver_id,)))
+    if recent < settings.login_codes_per_window:
+        return None
+    until = now + timedelta(minutes=settings.login_lockout_minutes)
+    with write_transaction(conn):
+        _log(conn, clock, "LOGIN_LOCKED", driver_id, payload={"until": to_iso(until), "codes": recent})
+    return until
+
+
 def request_code(conn, phone, clock, settings=SETTINGS):
     """Login step 1: check the driver and their trips, then make a 6-digit code (shown on screen in the demo)."""
     driver = _driver(conn, phone)
@@ -108,6 +128,12 @@ def request_code(conn, phone, clock, settings=SETTINGS):
         with write_transaction(conn):
             _log(conn, clock, "LOGIN_REFUSED", driver["driver_id"] if driver else "unknown", payload={"reason": reason})
         return LoginResult(False, reason)
+    if until := _locked_until(conn, driver["driver_id"], clock, settings):
+        minutes = math.ceil((until - clock.now()).total_seconds() / 60)
+        with write_transaction(conn):
+            _log(conn, clock, "LOGIN_REFUSED", driver["driver_id"], payload={"reason": "locked", "until": to_iso(until)})
+        return LoginResult(False, f"Too many codes asked for. Please try again in {minutes} "
+                                  f"{'minute' if minutes == 1 else 'minutes'}.")
     code, code_id, now = f"{secrets.randbelow(10**6):06d}", f"CODE-{uuid.uuid4().hex[:12]}", clock.now()
     session, sent_to = None, None
     if cognito.enabled():  # dp-24: Cognito makes and emails the code; we never see it

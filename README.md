@@ -58,6 +58,8 @@ uv run pytest
 
 **Real sign-in:** with `AUTH_MODE=cognito`, drivers get a real one-time code by email from Amazon Cognito instead of the on-screen demo code. Setup: [docs/08_cognito_setup.md](docs/08_cognito_setup.md).
 
+**Login limit:** a driver gets at most 3 codes in 15 minutes; a 4th request locks them out for 15 minutes. A code already in hand keeps working. The numbers are in `settings.py`.
+
 **The web demo:** a driver chat page and a warehouse page.
 
 ```bash
