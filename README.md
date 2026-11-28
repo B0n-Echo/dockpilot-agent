@@ -46,9 +46,31 @@ During the day, the timer (`lifecycle.check_drift`) re-checks bookings when a do
 
 ## Try it
 
-You need [uv](https://docs.astral.sh/uv/). Python 3.12 is picked up automatically. There are no other dependencies.
+**Live demo:** https://dockpilot-agent.onrender.com (free tier: the first visit after a quiet spell takes about a minute to wake up; the data resets on every restart).
 
-**Run the tests** (188 checks, about 25 seconds, all offline):
+**Run it with one command** (needs [uv](https://docs.astral.sh/uv/); it installs Python 3.12 and the locked libraries by itself):
+
+```bash
+uv run python -m dockpilot.webapp --reset
+```
+
+Then open http://127.0.0.1:8001. More below.
+
+### Stack and library versions
+
+| What | Version | Used for |
+|---|---|---|
+| Python | 3.12 | Everything (standard library: `sqlite3`, `http.server`, `urllib`, `threading`) |
+| SQLite | 3.54 (bundled with Python) | The working copy of the data plus DockPilot's own tables |
+| uv | 0.13 | Installs Python and the locked libraries (`uv.lock`) |
+| langsmith | 0.16.2 | Sending traces to LangSmith (optional; off unless `LANGSMITH_TRACING=true`) |
+| pytest | 9.2.0 (dev only) | The tests |
+| AI model | `anthropic/claude-haiku-5.5` via OpenRouter | Reading driver messages (optional; rules are the fallback) |
+| Hosting | Render (free web service) | The live demo (`render.yaml`) |
+
+No web framework and no other libraries: exact versions are pinned in `uv.lock`.
+
+**Run the tests** (197 checks, about 25 seconds, all offline):
 
 ```bash
 uv run pytest
@@ -175,7 +197,7 @@ Also measured:
 | `src/dockpilot/` | The code: one file per building block (see "How it works") |
 | `src/dockpilot/static/` | The two web pages (plain HTML + JavaScript) |
 | `src/dockpilot/migrations/` | DockPilot's own tables, added to a working copy of the data |
-| `tests/` | 188 checks, offline, on the real dummy data |
+| `tests/` | 197 checks, offline, on the real dummy data |
 | `data/source/` | The dataset exactly as received, with checksums |
 | `docs/` | Problem definition, data audit, decision register, and the replay output |
 | `progress/` | An internal build-progress page (`uv run python progress/server.py`) |
@@ -184,7 +206,8 @@ Also measured:
 
 ## Honest limits
 
-- Sign-in: with Cognito switched on, the code goes by **email**, not SMS. On your laptop it's shown on screen (demo mode). The chat is a web page, not WhatsApp.
+- Sign-in: the login code is **shown on screen** (demo mode), so anyone who knows a driver's number could log in as them. Real codes by email through Amazon Cognito are built but parked (our AWS account blocks Cognito). A login limit (3 codes per 15 minutes, then a 15-minute lockout) stops guessing. The chat is a web page, not WhatsApp.
+- No rate limit on chat messages yet.
 - Coordinators see hand-offs on the warehouse page but can't mark them handled, or move another truck's booking, yet.
 - A driver's own limits ("any slot after 12", "must leave before 1:30") are read but not yet used to choose slots.
 - Drivers who aren't chatting with DockPilot aren't told when their booking changes (no SMS / WhatsApp channel yet).
@@ -200,4 +223,5 @@ Also measured:
 - [How it works](docs/04_how_it_works.md): one message end to end from real traces, who calls whom, what happens when things fail, and the guardrails.
 - [Deploy on Render](docs/07_deploy_render.md) · [Cognito sign-in setup](docs/08_cognito_setup.md)
 - [Code map](docs/06_code_map.md): one picture of how the parts connect, four requests followed hop by hop (file:line, what goes in and out, what changes in the database), and which code writes and reads each table.
+- [Client readout](docs/09_client_readout.md): one page on policy, limits and risks.
 - [Bad data and edge cases](docs/05_bad_data_and_edge_cases.md): what DockPilot does when the data is wrong or something breaks, with the proof for each and the honest gaps.

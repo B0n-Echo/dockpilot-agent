@@ -270,7 +270,7 @@
       "status": "done",
       "what": "A driver gets at most 3 login codes in 15 minutes; a 4th request locks them out for 15 minutes. Pressing again doesn't extend it, and a code already in hand still works. Nobody can keep asking and guessing forever.",
       "where": "auth.py, settings.py",
-      "commit": ""
+      "commit": "0dcd4b4"
     }
   ],
   "choices": [
